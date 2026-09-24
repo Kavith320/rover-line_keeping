@@ -1,0 +1,94 @@
+{
+  "real_field_video.mp4": {
+    "top": 45,
+    "bottom": 100,
+    "left": 23,
+    "right": 78,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 38
+  },
+  "aaa.mp4": {
+    "top": 64,
+    "bottom": 84,
+    "left": 0,
+    "right": 100,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100,
+    "clahe_clip": 25,
+    "adapt_light": 1
+  },
+  "good.mp4": {
+    "top": 38,
+    "bottom": 83,
+    "left": 7,
+    "right": 100,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100,
+    "clahe_clip": 25,
+    "adapt_light": 0
+  },
+  "s.mp4": {
+    "top": 52,
+    "bottom": 80,
+    "left": 0,
+    "right": 100,
+    "kp": 78,
+    "ki": 12,
+    "kd": 0,
+    "base_rpm": 34,
+    "clahe_clip": 25,
+    "adapt_light": 0
+  },
+  "cr.mp4": {
+    "top": 45,
+    "bottom": 92,
+    "left": 0,
+    "right": 100,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100,
+    "clahe_clip": 25,
+    "adapt_light": 1
+  },
+  "simulated_field.mp4": {
+    "top": 45,
+    "bottom": 78,
+    "left": 0,
+    "right": 100,
+    "kp": 51,
+    "ki": 3,
+    "kd": 18,
+    "base_rpm": 53,
+    "clahe_clip": 25,
+    "adapt_light": 1
+  },
+  "rrr.mp4": {
+    "top": 25,
+    "bottom": 80,
+    "left": 24,
+    "right": 74,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100
+  },
+  "1.mp4": {
+    "top": 29,
+    "bottom": 73,
+    "left": 10,
+    "right": 85,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100,
+    "clahe_clip": 25,
+    "adapt_light": 1
+  }
+}

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Agri-Rover Cockpit | Autonomous Crop Navigation & Hardware Controller</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="logo-pulse"></div>
+      <div class="brand-text">
+        <h1>AGRI-ROVER <span>COCKPIT</span></h1>
+        <p class="subtitle">AUTONOMOUS CROP NAVIGATION &bull; ASUS TINKER BOARD</p>
+      </div>
+    </div>
+
+    <div class="nav-badges">
+      <div id="video-source-badge" class="badge badge-neutral" title="Current Video Device">
+        <span class="dot"></span>
+        <span id="txt-video-name">Loading source...</span>
+      </div>
+      <div id="serial-link-badge" class="badge badge-warn" title="Motor Driver Serial Link">
+        <span class="dot" id="serial-dot"></span>
+        <span id="txt-serial-status">SERIAL: DISCONNECTED</span>
+      </div>
+      <div id="status-beacon" class="badge badge-success">
+        <span class="beacon-dot"></span>
+        <span id="txt-status">ROW FOLLOWING</span>
+      </div>
+      <div class="badge badge-meta">
+        <span class="label">FPS</span>
+        <span id="txt-fps" class="value mono">--.-</span>
+      </div>
+      <div class="badge badge-meta">
+        <span class="label">PING</span>
+        <span id="txt-ping" class="value mono">-- ms</span>
+      </div>
+
+      <button id="btn-nav-estop" class="btn-estop-pulse" title="EMERGENCY STOP - Halt Rover Immediately">
+        <span class="estop-icon">🛑</span>
+        <span>E-STOP</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Responsive Grid -->
+  <main class="dashboard-grid">
+    <!-- Left Column: Video Feed & Stream Viewport -->
+    <section class="viewport-card">
+      <div class="card-header">
+        <div class="stream-title">
+          <span class="live-tag">LIVE FEED</span>
+          <span id="txt-stream-desc">Combined Digital Twin View</span>
+        </div>
+
+        <div class="view-mode-tabs" id="view-mode-selector">
+          <button class="tab-btn active" data-view="combined" id="btn-view-combined">Combined Twin</button>
+          <button class="tab-btn" data-view="camera" id="btn-view-camera">Camera View</button>
+          <button class="tab-btn" data-view="mask" id="btn-view-mask">Crop Mask</button>
+        </div>
+      </div>
+
+      <div class="stream-container">
+        <img id="rover-stream" src="/video_feed?view=combined" alt="Autonomous Rover Video Stream" />
+        <div id="stream-overlay-banner" class="stream-overlay">
+          <div class="overlay-item">
+            <span class="overlay-lbl">ERROR:</span>
+            <span id="txt-overlay-err" class="mono text-warn">0px</span>
+          </div>
+          <div class="overlay-item">
+            <span class="overlay-lbl">PWM (L/R):</span>
+            <span id="txt-overlay-pwm" class="mono text-highlight">L0 R0</span>
+          </div>
+          <div class="overlay-item">
+            <span class="overlay-lbl">ACTION:</span>
+            <span id="txt-overlay-act" class="mono text-highlight">INITIALIZING</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Floating Bar -->
+      <div class="quick-actions">
+        <button id="btn-pause" class="btn btn-secondary">
+          <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1"/>
+            <rect x="14" y="4" width="4" height="16" rx="1"/>
+          </svg>
+          <span id="txt-btn-pause">Pause</span>
+        </button>
+
+        <button id="btn-toggle-light" class="btn btn-secondary">
+          <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M12 2a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 15a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zM4.93 4.93a1 1 0 0 1 1.41 0l1.42 1.41a1 1 0 1 1-1.42 1.42L4.93 6.34a1 1 0 0 1 0-1.41zm12.73 12.73a1 1 0 0 1 1.41 0l1.42 1.41a1 1 0 0 1-1.42 1.42l-1.41-1.42a1 1 0 0 1 0-1.41zM2 12a1 1 0 0 1 1-1h2a1 1 0 1 1 0 2H3a1 1 0 0 1-1-1zm17 0a1 1 0 0 1 1-1h2a1 1 0 1 1 0 2h-2a1 1 0 0 1-1-1zM6.34 17.66a1 1 0 0 1 0 1.41l-1.41 1.42a1 1 0 1 1-1.42-1.42l1.42-1.41a1 1 0 0 1 1.41 0zm12.73-12.73a1 1 0 0 1 0 1.41l-1.41 1.42a1 1 0 1 1-1.42-1.42l1.42-1.41a1 1 0 0 1 1.41 0z"/>
+          </svg>
+          <span id="txt-btn-light">Toggle Light</span>
+        </button>
+
+        <div class="video-select-wrap">
+          <label for="select-device" class="select-label">Capture Source:</label>
+          <select id="select-device" class="select-dropdown">
+            <option value="">Scanning devices...</option>
+          </select>
+        </div>
+
+        <div class="sbc-select-wrap">
+          <label for="select-sbc-profile" class="select-label">SBC Optimization:</label>
+          <select id="select-sbc-profile" class="select-dropdown">
+            <option value="tinker_board">🚀 Asus Tinker Board (320x240 @ 20 FPS)</option>
+            <option value="balanced">⚡ Balanced (480x360 @ 25 FPS)</option>
+            <option value="desktop">🖥️ Desktop HD (640x480 @ 30 FPS)</option>
+          </select>
+        </div>
+
+        <button id="btn-save-cfg" class="btn btn-primary" title="Save calibration to roi_config.json">
+          <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM7 5v4h10V5H7zm5 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+          </svg>
+          <span>Save Config</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Right Column: Digital Twin & Telemetry Cluster -->
+    <section class="telemetry-card">
+      <!-- Steering Action Banner -->
+      <div id="action-banner" class="action-banner action-straight">
+        <span class="banner-sub">VEHICLE COMMAND:</span>
+        <h2 id="txt-decision">DRIVE STRAIGHT</h2>
+        <div id="txt-error-banner" class="banner-err mono">Error: 0 px</div>
+      </div>
+
+      <!-- Differential Hoverboard Wheel Power Gauges -->
+      <div class="telemetry-block">
+        <div class="block-header-flex">
+          <h3 class="block-title">DIFFERENTIAL PWM DRIVE</h3>
+          <div class="serial-live-badge">
+            <span class="tx-tag">TX:</span>
+            <span id="txt-serial-tx" class="mono text-highlight">&lt;0,0&gt;</span>
+          </div>
+        </div>
+
+        <div class="track-gauges">
+          <div class="track-gauge-item">
+            <div class="gauge-meta">
+              <span class="track-name text-left-track">LEFT MOTOR (PWM)</span>
+              <div>
+                <span id="txt-pwm-l" class="track-pwm-tag mono">PWM: 0</span>
+                <span id="txt-rpm-l" class="track-value mono text-left-track">100 RPM</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div id="bar-rpm-l" class="bar-fill bar-left" style="width: 62%;"></div>
+            </div>
+          </div>
+
+          <div class="track-gauge-item">
+            <div class="gauge-meta">
+              <span class="track-name text-right-track">RIGHT MOTOR (PWM)</span>
+              <div>
+                <span id="txt-pwm-r" class="track-pwm-tag mono">PWM: 0</span>
+                <span id="txt-rpm-r" class="track-value mono text-right-track">100 RPM</span>
+              </div>
+            </div>
+            <div class="bar-track">
+              <div id="bar-rpm-r" class="bar-fill bar-right" style="width: 62%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PID Steering Balance Meter -->
+      <div class="telemetry-block">
+        <div class="block-header-flex">
+          <h3 class="block-title">PID STEERING BALANCE</h3>
+          <span id="txt-pid-net" class="pid-net-tag mono">Net: 0.0 RPM</span>
+        </div>
+
+        <div class="balance-meter">
+          <div class="balance-track">
+            <div class="balance-center-mark"></div>
+            <div id="balance-fill" class="balance-fill"></div>
+            <div id="balance-pointer" class="balance-pointer"></div>
+          </div>
+          <div class="balance-labels">
+            <span>-60 RPM (L)</span>
+            <span>CENTER</span>
+            <span>+60 RPM (R)</span>
+          </div>
+        </div>
+
+        <!-- PID Components Breakdown -->
+        <div class="pid-breakdown-grid">
+          <div class="pid-pill pill-p">
+            <span class="pill-lbl">P-Term</span>
+            <span id="txt-term-p" class="pill-val mono">+0.0</span>
+          </div>
+          <div class="pid-pill pill-i">
+            <span class="pill-lbl">I-Term</span>
+            <span id="txt-term-i" class="pill-val mono">+0.0</span>
+          </div>
+          <div class="pid-pill pill-d">
+            <span class="pill-lbl">D-Term</span>
+            <span id="txt-term-d" class="pill-val mono">+0.0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Field Edge & Environmental Telemetry -->
+      <div class="telemetry-block">
+        <h3 class="block-title">ENVIRONMENT & FIELD BOUNDARY</h3>
+        <div class="env-grid">
+          <div class="env-item">
+            <span class="env-label">Forward Crop Density</span>
+            <div class="density-bar-wrap">
+              <div id="bar-density" class="density-bar" style="width: 45%;"></div>
+            </div>
+            <span id="txt-density" class="env-val mono">8.4%</span>
+          </div>
+
+          <div class="env-item">
+            <span class="env-label">Ambient Luminance</span>
+            <span id="txt-ambient" class="env-val mono">113 LUX</span>
+          </div>
+
+          <div class="env-item">
+            <span class="env-label">Lighting Adaptation</span>
+            <span id="txt-light-mode" class="env-val text-success">ADAPTIVE (CLAHE 2.5)</span>
+          </div>
+
+          <div class="env-item">
+            <span class="env-label">Dynamic Thresholds</span>
+            <span id="txt-dyn-thresh" class="env-val mono">S_min: 38 | V_min: 27</span>
+          </div>
+
+          <div class="env-item">
+            <span class="env-label">Rotary Weeder / Tiller</span>
+            <span id="txt-tiller-status" class="env-val text-success">ACTIVE (420 RPM)</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom Full-Width Calibration & Hardware Tuning Deck -->
+    <section class="controls-card">
+      <div class="controls-header">
+        <div class="controls-tabs">
+          <button class="ctrl-tab active" data-tab="hardware" id="tab-btn-hardware">🔌 Hardware & Serial Link</button>
+          <button class="ctrl-tab" data-tab="pid" id="tab-btn-pid">PID Steering Gains</button>
+          <button class="ctrl-tab" data-tab="roi" id="tab-btn-roi">Camera ROI Calibration</button>
+          <button class="ctrl-tab" data-tab="light" id="tab-btn-light">Adaptive Lighting</button>
+        </div>
+        <button id="btn-reset-defaults" class="btn btn-outline" title="Reset current settings to defaults">Reset Defaults</button>
+      </div>
+
+      <!-- TAB 1: Hardware & Serial Link Panel -->
+      <div class="tab-panel active" id="panel-hardware">
+        <div class="hardware-grid">
+          <!-- Card 1: Serial Link Connection -->
+          <div class="hardware-card">
+            <div class="card-head">
+              <h4>📡 Serial Port & Baudrate</h4>
+              <span id="status-pill-serial" class="status-pill pill-warn">DISCONNECTED</span>
+            </div>
+
+            <div class="hw-form-group">
+              <label for="select-serial-port">Serial Port (USB / UART):</label>
+              <div class="input-with-button">
+                <select id="select-serial-port" class="select-dropdown flex-grow">
+                  <option value="/dev/ttyUSB0">/dev/ttyUSB0 (Standard USB)</option>
+                  <option value="/dev/ttyACM0">/dev/ttyACM0 (Arduino)</option>
+                  <option value="/dev/ttyS1">/dev/ttyS1 (Tinker Board UART1)</option>
+                </select>
+                <button id="btn-refresh-ports" class="btn btn-secondary btn-icon-only" title="Scan for connected serial devices">🔄</button>
+              </div>
+            </div>
+
+            <div class="hw-form-group">
+              <label for="input-custom-port">Custom Port Path:</label>
+              <input type="text" id="input-custom-port" class="text-input" placeholder="/dev/ttyUSB0 or COM3" />
+            </div>
+
+            <div class="hw-form-group">
+              <label for="select-baudrate">Baud Rate:</label>
+              <select id="select-baudrate" class="select-dropdown">
+                <option value="9600">9600 Baud</option>
+                <option value="19200">19200 Baud</option>
+                <option value="38400">38400 Baud</option>
+                <option value="57600">57600 Baud</option>
+                <option value="115200" selected>115200 Baud (Standard)</option>
+                <option value="230400">230400 Baud (High Speed)</option>
+                <option value="460800">460800 Baud</option>
+                <option value="921600">921600 Baud</option>
+              </select>
+            </div>
+
+            <div class="serial-action-buttons">
+              <button id="btn-serial-connect" class="btn btn-primary flex-grow">Connect Serial</button>
+              <button id="btn-serial-disconnect" class="btn btn-secondary">Disconnect</button>
+            </div>
+
+            <div class="terminal-box">
+              <div class="terminal-title">LIVE SERIAL TX:</div>
+              <code id="terminal-packet-log">&lt;0, 0&gt;</code>
+            </div>
+          </div>
+
+          <!-- Card 2: Motor Driver & PWM Tuning -->
+          <div class="hardware-card">
+            <div class="card-head">
+              <h4>⚙️ Motor Driver & PWM Config</h4>
+              <label class="switch-small">
+                <input type="checkbox" id="check-motors-enable" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="hw-form-group">
+              <div class="slider-header">
+                <label for="range-pwm-min">Min PWM Deadband (Overcome Friction):</label>
+                <span id="val-pwm-min" class="slider-val mono">35</span>
+              </div>
+              <input type="range" id="range-pwm-min" min="0" max="80" value="35" class="range-slider">
+            </div>
+
+            <div class="hw-form-group">
+              <div class="slider-header">
+                <label for="range-pwm-max">Max PWM Limit (Speed Ceiling):</label>
+                <span id="val-pwm-max" class="slider-val mono">255</span>
+              </div>
+              <input type="range" id="range-pwm-max" min="100" max="255" value="255" class="range-slider">
+            </div>
+
+            <div class="checkbox-row">
+              <label class="checkbox-label">
+                <input type="checkbox" id="check-invert-left">
+                <span>Invert Left Motor</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="check-invert-right">
+                <span>Invert Right Motor</span>
+              </label>
+            </div>
+
+            <div class="hw-form-group">
+              <label for="select-protocol">Packet Protocol Format:</label>
+              <select id="select-protocol" class="select-dropdown">
+                <option value="bracket" selected>&lt;PWM_L, PWM_R&gt; (Standard Arduino)</option>
+                <option value="text">L:180,R:180 (Key-Value)</option>
+                <option value="json">{"l":180,"r":180} (JSON)</option>
+              </select>
+            </div>
+
+            <button id="btn-save-hardware-cfg" class="btn btn-secondary full-width">Save Motor Configuration</button>
+          </div>
+
+          <!-- Card 3: Video Capture & Benchtop Motor Test Pad -->
+          <div class="hardware-card">
+            <div class="card-head">
+              <h4>🎮 Video Capture & Benchtop Test Pad</h4>
+            </div>
+
+            <div class="hw-form-group">
+              <label for="input-custom-camera">Custom Camera / Pipeline Input:</label>
+              <div class="input-with-button">
+                <input type="text" id="input-custom-camera" class="text-input flex-grow" placeholder="0 or /dev/video0 or CSI pipeline" />
+                <button id="btn-apply-camera" class="btn btn-secondary">Switch</button>
+              </div>
+            </div>
+
+            <div class="bench-pad-title">Benchtop Motor Direction Verification:</div>
+            <div class="dpad-grid">
+              <div></div>
+              <button class="btn-dpad" id="btn-test-fwd" title="Test Forward">⬆️<br><small>FWD</small></button>
+              <div></div>
+
+              <button class="btn-dpad" id="btn-test-spin-l" title="Spin Left">↩️<br><small>LEFT</small></button>
+              <button class="btn-dpad btn-dpad-stop" id="btn-test-stop" title="Stop Motors">🛑<br><small>STOP</small></button>
+              <button class="btn-dpad" id="btn-test-spin-r" title="Spin Right">↪️<br><small>RIGHT</small></button>
+
+              <div></div>
+              <button class="btn-dpad" id="btn-test-rev" title="Test Reverse">⬇️<br><small>REV</small></button>
+              <div></div>
+            </div>
+
+            <div class="estop-card-footer">
+              <button id="btn-estop-card" class="btn btn-danger full-width">
+                🚨 EMERGENCY CUTOFF (E-STOP)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: PID Steering Gains Tab -->
+      <div class="tab-panel" id="panel-pid">
+        <div class="sliders-grid">
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-kp">Kp (Proportional Steering)</label>
+              <span id="val-kp" class="slider-val mono">0.45</span>
+            </div>
+            <input type="range" id="range-kp" min="0" max="200" value="45" class="range-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-ki">Ki (Integral Steady-State)</label>
+              <span id="val-ki" class="slider-val mono">0.030</span>
+            </div>
+            <input type="range" id="range-ki" min="0" max="50" value="3" class="range-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-kd">Kd (Derivative Damping)</label>
+              <span id="val-kd" class="slider-val mono">0.15</span>
+            </div>
+            <input type="range" id="range-kd" min="0" max="150" value="15" class="range-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-base-rpm">Base Cruising Speed (RPM)</label>
+              <span id="val-base-rpm" class="slider-val mono">100 RPM</span>
+            </div>
+            <input type="range" id="range-base-rpm" min="20" max="160" value="100" class="range-slider">
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: ROI Calibration Tab -->
+      <div class="tab-panel" id="panel-roi">
+        <div class="sliders-grid">
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-roi-top">ROI Top % (Exclude Horizon/Chassis)</label>
+              <span id="val-roi-top" class="slider-val mono">45%</span>
+            </div>
+            <input type="range" id="range-roi-top" min="0" max="95" value="45" class="range-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-roi-bottom">ROI Bottom % (Exclude Wheels/Bumper)</label>
+              <span id="val-roi-bottom" class="slider-val mono">95%</span>
+            </div>
+            <input type="range" id="range-roi-bottom" min="5" max="100" value="95" class="range-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-roi-left">ROI Left % (Exclude Left Tire)</label>
+              <span id="val-roi-left" class="slider-val mono">0%</span>
+            </div>
+            <input type="range" id="range-roi-left" min="0" max="95" value="0" class="range-slider">
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-roi-right">ROI Right % (Exclude Right Tire)</label>
+              <span id="val-roi-right" class="slider-val mono">100%</span>
+            </div>
+            <input type="range" id="range-roi-right" min="5" max="100" value="100" class="range-slider">
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: Adaptive Lighting Tab -->
+      <div class="tab-panel" id="panel-light">
+        <div class="sliders-grid">
+          <div class="slider-group">
+            <div class="slider-header">
+              <label for="range-clahe">CLAHE Clip Limit (Local Shadow/Glare Equalization)</label>
+              <span id="val-clahe" class="slider-val mono">2.5</span>
+            </div>
+            <input type="range" id="range-clahe" min="1" max="50" value="25" class="range-slider">
+          </div>
+
+          <div class="slider-group toggle-group">
+            <div class="toggle-desc">
+              <strong>Adaptive Lighting Pipeline</strong>
+              <p>Fuses L-channel CLAHE, Excess Green Index (ExG), and dynamic HSV adaptation to withstand direct noon sun and deep chassis shadows.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="check-adaptive" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>Autonomous Agricultural Rover Cockpit &bull; Hardware PWM & Serial Control</span>
+    <span>SBC Profile: <strong id="txt-footer-sbc">ASUS Tinker Board (320x240)</strong> &bull; Host: <strong id="txt-conn-ip">--</strong></span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
