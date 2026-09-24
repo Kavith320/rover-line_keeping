@@ -90,5 +90,41 @@
     "base_rpm": 100,
     "clahe_clip": 25,
     "adapt_light": 1
+  },
+  "0": {
+    "top": 45,
+    "bottom": 95,
+    "left": 0,
+    "right": 100,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100,
+    "clahe_clip": 25,
+    "adapt_light": 1
+  },
+  "1": {
+    "top": 45,
+    "bottom": 95,
+    "left": 0,
+    "right": 100,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100,
+    "clahe_clip": 25,
+    "adapt_light": 1
+  },
+  "2.mp4": {
+    "top": 45,
+    "bottom": 95,
+    "left": 0,
+    "right": 100,
+    "kp": 45,
+    "ki": 3,
+    "kd": 15,
+    "base_rpm": 100,
+    "clahe_clip": 25,
+    "adapt_light": 1
   }
 }
