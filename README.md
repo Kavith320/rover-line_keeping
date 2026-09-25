@@ -312,7 +312,9 @@ Image_processing/
 ├── serial_motor_controller.py          # Serial communication & PWM motor driver controller (Safe startup standby)
 ├── video_device_manager.py             # Dynamic video capture device discovery & zero-latency capture
 ├── sbc_optimizer.py                    # Performance tuning profiles for Raspberry Pi 3B/4B & ASUS Tinker Board
-├── arduino_rover_motor_controller.ino  # Ready-to-flash microcontroller firmware with TRACKING_DISABLED/ENABLED support
+├── arduino_rover_motor_controller.ino  # Ready-to-flash Arduino firmware with TRACKING_DISABLED/ENABLED support
+├── esp32_rover_motor_controller.ino    # 🚀 Next-Gen ESP32 firmware (20kHz silent PWM, slew-rate ramps, encoder hooks)
+├── TELEMETRY_SPECIFICATION.md          # 📜 Detailed Telemetry & Serial Communication Protocol Specification
 ├── hardware_config.json                # Saved serial port, baudrate, and PWM calibration
 ├── roi_config.json                     # Saved per-video detection boundaries
 ├── requirements.txt                    # Project dependencies (opencv-python, numpy, flask, pyserial)
@@ -337,6 +339,8 @@ Image_processing/
 
 ### 1. Serial Motor Driver Communication & PWM Control
 The rover transforms differential steering errors and cruising speeds into hardware **PWM** (Pulse Width Modulation) commands sent across a serial link (USB or hardware UART) to your motor driver microcontroller (Arduino Uno/Nano/Mega, ESP32, STM32, Teensy, Cytron, BTS7960, or Sabertooth).
+
+> 📘 **Full Telemetry & Serial Protocol Specification**: For in-depth packet anatomy, finite state machine parsing, timing budgets, and next-gen sensor fusion expansion (wheel odometry, slip detection, physical velocity loops), refer to [TELEMETRY_SPECIFICATION.md](file:///Users/kavithudapola/Documents/Rover/Image_processing/TELEMETRY_SPECIFICATION.md).
 
 - **Standard Packet Protocol**: `<PWM_LEFT,PWM_RIGHT>\n`
   - Example: `<180,180>\n` (Drive forward at ~70% duty cycle)
@@ -402,16 +406,29 @@ python3 main.py --profile rpi3b --serial-port /dev/ttyUSB0 --baudrate 115200
 
 ## Microcontroller Firmware (Arduino / ESP32)
 
-Upload the included [`arduino_rover_motor_controller.ino`](file:///Users/kavithudapola/Documents/Rover/Image_processing/arduino_rover_motor_controller.ino) to your microcontroller:
-1. Open [`arduino_rover_motor_controller.ino`](file:///Users/kavithudapola/Documents/Rover/Image_processing/arduino_rover_motor_controller.ino) in the Arduino IDE.
-2. Verify pin assignments for your motor driver (L298N, BTS7960, Cytron, etc.):
-   - Left Motor: `PIN_PWM_LEFT = 5`, `PIN_DIR_LEFT_A = 7`, `PIN_DIR_LEFT_B = 8`
-   - Right Motor: `PIN_PWM_RIGHT = 6`, `PIN_DIR_RIGHT_A = 9`, `PIN_DIR_RIGHT_B = 10`
-   - Status LED: `PIN_LED_STATUS = 13`
-3. Select your board (Arduino Uno, Nano, Mega, or ESP32) and upload.
-4. Connect the USB cable between the microcontroller and the Raspberry Pi / SBC USB port (or connect TX/RX to hardware UART).
+Two production-ready firmware files are included depending on your microcontroller:
 
-### Supported Firmware Commands:
+### 1. Next-Gen ESP32 Firmware ([`esp32_rover_motor_controller.ino`](file:///Users/kavithudapola/Documents/Rover/Image_processing/esp32_rover_motor_controller.ino))
+Designed for high-performance rovers running on **ESP32 DevKit V1 / WROOM-32 / ESP32-S3**:
+- **Silent 20 kHz Ultrasonic PWM**: Completely eliminates audible motor whining hum using ESP32 hardware LEDC timers.
+- **Slew-Rate Acceleration Ramp**: Smooth acceleration ramps prevent sudden current spikes, gear stripping, and tire slippage in loose field soil.
+- **Selectable Driver Support**: Uncomment a single `#define` at the top for:
+  - Standard `DIR_A + DIR_B + PWM` (L298N, TB6612FNG)
+  - `DIR + PWM` (Cytron MDD10A / MDDS30)
+  - Dual-PWM H-Bridge (BTS7960 RPWM + LPWM)
+- **Pinout (Default)**:
+  - Left Motor PWM: `GPIO 18` | Direction: `GPIO 19, 21`
+  - Right Motor PWM: `GPIO 22` | Direction: `GPIO 23, 25`
+  - Status LED: `GPIO 2`
+- **Next-Gen Expansion Hooks**: Pre-configured GPIO definitions for Quadrature Wheel Encoders (`GPIO 32, 33, 26, 27`), Battery Voltage ADC (`GPIO 34`), and I2C telemetry.
+
+### 2. Standard Arduino Firmware ([`arduino_rover_motor_controller.ino`](file:///Users/kavithudapola/Documents/Rover/Image_processing/arduino_rover_motor_controller.ino))
+Compatible with **Arduino Uno, Nano, Mega, or Leonardo**:
+- Left Motor: `PIN_PWM_LEFT = 5`, `PIN_DIR_LEFT_A = 7`, `PIN_DIR_LEFT_B = 8`
+- Right Motor: `PIN_PWM_RIGHT = 6`, `PIN_DIR_RIGHT_A = 9`, `PIN_DIR_RIGHT_B = 10`
+- Status LED: `PIN_LED_STATUS = 13`
+
+### 3. Supported Firmware Serial Commands:
 - `<TRACKING_DISABLED>`, `<DISABLE>`, or `<STOP>`:
   - Immediately disengages motors (`emergencyStop()`).
   - Extinguishes Status LED.
@@ -422,5 +439,6 @@ Upload the included [`arduino_rover_motor_controller.ino`](file:///Users/kavithu
 - `<PWM_LEFT,PWM_RIGHT>`:
   - Sets differential drive speed and direction.
   - Ignored if tracking has not been enabled or failsafe watchdog expires (>500ms without packet).
-- `<EMERGENCY_STOP>`:
-  - Immediate fail-safe cutoff.
+- `<PING>`: Responds with `PONG` (for connection diagnostics).
+- `<EMERGENCY_STOP>`: Immediate fail-safe cutoff.
+
