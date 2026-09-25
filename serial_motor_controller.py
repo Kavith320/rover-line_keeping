@@ -151,7 +151,9 @@ class SerialMotorController:
         self.last_pwm_l = 0
         self.last_pwm_r = 0
         self.emergency_stopped = False
-        self.motors_enabled = True
+        # SAFETY FIRST: Motors and autonomous tracking are DISABLED by default on application start
+        self.motors_enabled = False
+        self.tracking_enabled = False
 
         # Watchdog monitor thread
         self.running = True
@@ -173,6 +175,9 @@ class SerialMotorController:
                 self.simulated_mode = True
                 self.is_open = True
                 print(f"[INFO] PySerial not installed. Running in SIMULATED Serial mode on {self.cfg['port']} @ {self.cfg['baudrate']} baud.")
+                # Transmit initial safe disabled state
+                self._raw_send("<0,0>\n")
+                self._raw_send("<TRACKING_DISABLED>\n")
                 return True, "Simulated serial mode (pyserial not installed)"
 
             try:
@@ -187,6 +192,12 @@ class SerialMotorController:
                 self.is_open = True
                 self.simulated_mode = False
                 print(f"[SUCCESS] Connected to Motor Controller on {self.cfg['port']} @ {self.cfg['baudrate']} baud.")
+                # Transmit initial safe disabled status to microcontroller
+                self._raw_send("<0,0>\n")
+                if not self.tracking_enabled:
+                    self._raw_send("<TRACKING_DISABLED>\n")
+                else:
+                    self._raw_send("<TRACKING_ENABLED>\n")
                 return True, f"Connected to {self.cfg['port']}"
             except Exception as e:
                 self.ser = None
@@ -218,7 +229,12 @@ class SerialMotorController:
     def get_status(self):
         """Returns the current state of the serial motor controller."""
         with self.lock:
-            state = "CONNECTED" if (self.is_open and not self.simulated_mode) else ("SIMULATED" if self.is_open else "DISCONNECTED")
+            base_state = "CONNECTED" if (self.is_open and not self.simulated_mode) else ("SIMULATED" if self.is_open else "DISCONNECTED")
+            if not self.tracking_enabled or not self.motors_enabled:
+                state = f"{base_state} (TRACKING DISABLED)"
+            else:
+                state = f"{base_state} (ACTIVE)"
+
             return {
                 "connected": self.is_open,
                 "simulated": self.simulated_mode,
@@ -229,6 +245,7 @@ class SerialMotorController:
                 "pwm_l": self.last_pwm_l,
                 "pwm_r": self.last_pwm_r,
                 "motors_enabled": self.motors_enabled,
+                "tracking_enabled": self.tracking_enabled,
                 "emergency_stopped": self.emergency_stopped,
                 "pwm_min": self.cfg.get("pwm_min", 35),
                 "pwm_max": self.cfg.get("pwm_max", 255),
@@ -291,6 +308,16 @@ class SerialMotorController:
         else: # 'bracket' default: <pwm_l,pwm_r>\n
             return f"<{pwm_l},{pwm_r}>\n"
 
+    def format_status_packet(self, status_str):
+        """Formats high-level status / mode commands to microcontroller."""
+        proto = self.cfg.get("protocol", "bracket")
+        if proto == "json":
+            return json.dumps({"cmd": status_str}) + "\n"
+        elif proto == "text":
+            return f"CMD:{status_str}\n"
+        else: # 'bracket' default: <status_str>\n
+            return f"<{status_str}>\n"
+
     def _raw_send(self, packet_str):
         """Sends raw string over serial or updates simulation buffer."""
         self.last_tx_time = time.time()
@@ -304,13 +331,49 @@ class SerialMotorController:
                 print(f"[WARN] Serial write error: {e}")
                 self.simulated_mode = True
 
+    def enable_tracking(self):
+        """Enables autonomous tracking and active motor commanding."""
+        with self.lock:
+            self.tracking_enabled = True
+            self.motors_enabled = True
+            self.emergency_stopped = False
+            packet = self.format_status_packet("TRACKING_ENABLED")
+            self._raw_send(packet)
+            print("[SERIAL] >> TRACKING ENABLED: Motor commanding is now active.")
+            return True
+
+    def disable_tracking(self):
+        """Disables autonomous tracking and safely halts motors."""
+        with self.lock:
+            self.tracking_enabled = False
+            self.motors_enabled = False
+            self.last_pwm_l = 0
+            self.last_pwm_r = 0
+            # Send immediate stop packet
+            self._raw_send(self.format_packet(0, 0))
+            # Send tracking disabled status notification packet
+            packet = self.format_status_packet("TRACKING_DISABLED")
+            self._raw_send(packet)
+            print("[SERIAL] >> TRACKING DISABLED: Sent stop & TRACKING_DISABLED via serial.")
+            return False
+
+    def toggle_tracking(self, enabled=None):
+        """Toggles or sets the tracking enable state."""
+        with self.lock:
+            target = not self.tracking_enabled if enabled is None else bool(enabled)
+        if target:
+            return self.enable_tracking()
+        else:
+            return self.disable_tracking()
+
     def send_differential_drive(self, speed_l, speed_r):
         """
         Translates Left & Right wheel speeds into hardware PWM and transmits over serial.
         Called by vision engine on each processed frame.
+        Guarantees 0 PWM if tracking is disabled or emergency stopped.
         """
         with self.lock:
-            if self.emergency_stopped or not self.motors_enabled:
+            if self.emergency_stopped or not self.motors_enabled or not self.tracking_enabled:
                 pwm_l, pwm_r = 0, 0
             else:
                 pwm_l = self.speed_to_pwm(speed_l, is_left=True)
@@ -320,37 +383,34 @@ class SerialMotorController:
             self.last_pwm_r = pwm_r
 
             packet = self.format_packet(pwm_l, pwm_r)
-            self._raw_send(packet)
+            # Only transmit differential drive packets if tracking is enabled or if stopping
+            if self.tracking_enabled and self.motors_enabled and not self.emergency_stopped:
+                self._raw_send(packet)
             return pwm_l, pwm_r, packet
 
     def emergency_stop(self):
-        """Immediately halts all motor output."""
+        """Immediately halts all motor output and disables tracking."""
         with self.lock:
             self.emergency_stopped = True
+            self.tracking_enabled = False
+            self.motors_enabled = False
             self.last_pwm_l = 0
             self.last_pwm_r = 0
-            packet = self.format_packet(0, 0)
-            self._raw_send(packet)
-            print("[EMERGENCY STOP] All rover motors cut to 0 PWM!")
+            self._raw_send(self.format_packet(0, 0))
+            self._raw_send(self.format_status_packet("TRACKING_DISABLED"))
+            print("[EMERGENCY STOP] All rover motors cut to 0 PWM & tracking disabled!")
             return True
 
     def reset_estop(self):
-        """Clears the emergency stop latch."""
+        """Clears the emergency stop latch (leaves tracking in standby until user presses Run)."""
         with self.lock:
             self.emergency_stopped = False
-            print("[INFO] Emergency stop cleared. Motors operational.")
+            print("[INFO] Emergency stop cleared. Motors in STANDBY (Press RUN to start tracking).")
             return True
 
     def toggle_motors(self, enabled=None):
         """Enables or disables motor power commands."""
-        with self.lock:
-            if enabled is None:
-                self.motors_enabled = not self.motors_enabled
-            else:
-                self.motors_enabled = bool(enabled)
-            if not self.motors_enabled:
-                self._raw_send(self.format_packet(0, 0))
-            return self.motors_enabled
+        return self.toggle_tracking(enabled)
 
     def manual_test_drive(self, command):
         """

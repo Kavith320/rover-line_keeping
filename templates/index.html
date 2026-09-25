@@ -42,6 +42,12 @@
         <span id="txt-ping" class="value mono">-- ms</span>
       </div>
 
+      <!-- MASTER TRACKING RUN/STOP BUTTON (Defaults to Standby / Disabled on startup) -->
+      <button id="btn-nav-run" class="btn-run-master btn-run-standby" title="Start Autonomous Crop Line Tracking">
+        <span class="run-icon" id="icon-nav-run">▶</span>
+        <span id="txt-nav-run">RUN TRACKING</span>
+      </button>
+
       <button id="btn-nav-estop" class="btn-estop-pulse" title="EMERGENCY STOP - Halt Rover Immediately">
         <span class="estop-icon">🛑</span>
         <span>E-STOP</span>
@@ -70,6 +76,10 @@
         <img id="rover-stream" src="/video_feed?view=combined" alt="Autonomous Rover Video Stream" />
         <div id="stream-overlay-banner" class="stream-overlay">
           <div class="overlay-item">
+            <span class="overlay-lbl">STATE:</span>
+            <span id="txt-overlay-state" class="mono text-warn">STANDBY (MOTORS OFF)</span>
+          </div>
+          <div class="overlay-item">
             <span class="overlay-lbl">ERROR:</span>
             <span id="txt-overlay-err" class="mono text-warn">0px</span>
           </div>
@@ -86,12 +96,18 @@
 
       <!-- Quick Action Floating Bar -->
       <div class="quick-actions">
+        <!-- Prominent Run/Stop Button in Quick Bar -->
+        <button id="btn-quick-run" class="btn btn-run-action" title="Toggle autonomous line tracking and motor power">
+          <span id="icon-quick-run" class="btn-icon-text">▶</span>
+          <span id="txt-quick-run">RUN TRACKING</span>
+        </button>
+
         <button id="btn-pause" class="btn btn-secondary">
           <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
             <rect x="6" y="4" width="4" height="16" rx="1"/>
             <rect x="14" y="4" width="4" height="16" rx="1"/>
           </svg>
-          <span id="txt-btn-pause">Pause</span>
+          <span id="txt-btn-pause">Pause Feed</span>
         </button>
 
         <button id="btn-toggle-light" class="btn btn-secondary">
@@ -111,6 +127,8 @@
         <div class="sbc-select-wrap">
           <label for="select-sbc-profile" class="select-label">SBC Optimization:</label>
           <select id="select-sbc-profile" class="select-dropdown">
+            <option value="rpi3b" selected>🍓 Raspberry Pi 3B / Zero 2W (320x240 @ 18 FPS)</option>
+            <option value="rpi4">🍓 Raspberry Pi 4B / 5 (480x360 @ 25 FPS)</option>
             <option value="tinker_board">🚀 Asus Tinker Board (320x240 @ 20 FPS)</option>
             <option value="balanced">⚡ Balanced (480x360 @ 25 FPS)</option>
             <option value="desktop">🖥️ Desktop HD (640x480 @ 30 FPS)</option>

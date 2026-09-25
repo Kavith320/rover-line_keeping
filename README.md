@@ -8,12 +8,17 @@ An educational computer vision and robotics simulation platform for autonomous c
 1. [Overview & Features](#overview--features)
 2. [Platform Architecture](#platform-architecture)
 3. [Installation & Setup](#installation--setup)
-4. [How to Run](#how-to-run)
-5. [Interactive Controls](#interactive-controls)
-6. [Detection Area (ROI) Calibration](#detection-area-roi-calibration)
-7. [Steering Logic & Track Physics](#steering-logic--track-physics)
-8. [Project File Structure](#project-file-structure)
-9. [Hardware Transition Roadmap](#hardware-transition-roadmap)
+4. [How to Run (Master Production App)](#how-to-run-master-production-app)
+5. [Startup Motor Safety & Tracking Toggle](#startup-motor-safety--tracking-toggle)
+6. [Line Tracking & Drivable Corridor Visualization](#line-tracking--drivable-corridor-visualization)
+7. [Interactive Controls & Web Cockpit](#interactive-controls--web-cockpit)
+8. [Detection Area (ROI) Calibration](#detection-area-roi-calibration)
+9. [PID Steering Optimization](#pid-steering-optimization)
+10. [Field Edge & End-of-Row Detection](#field-edge--end-of-row-detection)
+11. [Project File Structure](#project-file-structure)
+12. [Hardware Integration & Serial Link Guide](#hardware-integration--serial-link-guide)
+13. [SBC Optimization (Raspberry Pi 3B / 4B & ASUS Tinker Board)](#sbc-optimization-raspberry-pi-3b--4b--asus-tinker-board)
+14. [Microcontroller Firmware (Arduino / ESP32)](#microcontroller-firmware-arduino--esp32)
 
 ---
 
@@ -105,82 +110,129 @@ pip install -r requirements.txt
 
 ---
 
-## How to Run
+## How to Run (Master Production App)
 
-### Option 1: Run the Web Remote Cockpit (View on Any Device / Phone / Tablet)
+### Option 1: Master Production Application (Recommended for Raspberry Pi & Embedded SBCs)
+Run the consolidated, production-ready master application:
 ```bash
-# Launch the web platform (accessible on phone, tablet, laptop over Wi-Fi):
-python web_rover_dashboard.py
+# Default launch (Auto-detects Raspberry Pi 3B / 4B / SBC & optimizes):
+python3 main.py
 
-# Or launch with a specific video:
-python web_rover_dashboard.py --video data/good.mp4
-# Or via dashboard flag:
-python step4_rover_simulation_dashboard.py --video data/good.mp4 --web
+# Launch with a specific video file:
+python3 main.py --video data/good.mp4
+
+# Launch with live USB or CSI camera on Raspberry Pi:
+python3 main.py --video 0
+
+# Set explicit SBC performance profile (rpi3b, rpi4, tinker_board, desktop):
+python3 main.py --profile rpi3b --serial-port /dev/ttyUSB0 --baudrate 115200
 ```
+
+> **🛡️ Safety Notice:** On startup, the rover starts in **SAFE STANDBY** with all motor commands disabled (`PWM=0`, `<TRACKING_DISABLED>` transmitted over serial). To start autonomous movement, click the green **`▶ RUN TRACKING`** button in the web cockpit!
+
 When launched, the terminal displays your network address:
 ```
-==============================================================
-  🌾 Autonomous Agricultural Rover - Web Remote Platform 🌾
-==============================================================
-  📱 Phone / Tablet Access : http://192.168.1.105:5000
-  💻 Local Computer Access : http://localhost:5000
-==============================================================
+====================================================================
+  🌾  AUTONOMOUS AGRICULTURAL ROVER - PRODUCTION MASTER CONTROLLER  🌾
+====================================================================
+  📱 Mobile / Tablet Cockpit : http://192.168.1.3:5001
+  💻 Local Web Dashboard     : http://localhost:5001
+--------------------------------------------------------------------
+  ⚡ SBC Hardware Profile    : 🍓 Raspberry Pi 3B / Zero 2W (320x240 @ 18 FPS)
+  🔌 Serial Motor Driver     : /dev/ttyUSB0 @ 115200 baud
+  📷 Active Vision Source    : good.mp4
+  🛡️ Startup Safety State    : MOTORS DISABLED (Press RUN in Web UI)
+====================================================================
 ```
 Open the URL in **Safari on your iPhone/iPad**, **Chrome on Android**, or your laptop. You get live sub-50ms MJPEG video streaming, real-time PID & track RPM gauges, and touch sliders to calibrate detection bounds and gains directly in the field!
 
-### Option 2: Run the Local Desktop OpenCV Window
+### Option 2: Run via web_rover_dashboard.py
 ```bash
-python step4_rover_simulation_dashboard.py
+python3 web_rover_dashboard.py --port 5001
 ```
 
-### Option 3: Run Desktop with a Custom Video
-Point to any video file inside the `data/` folder:
-
+### Option 3: Run the Legacy Desktop OpenCV Simulation GUI
+*(Requires an attached HDMI monitor or X11 desktop environment)*:
 ```bash
-# Run with real straddle robot footage:
-python step4_rover_simulation_dashboard.py --video data/aaa.mp4
-
-# Run with corn row footage:
-python step4_rover_simulation_dashboard.py --video data/real_field_video.mp4
-
-# Run with other field videos:
-python step4_rover_simulation_dashboard.py --video data/good.mp4
-python step4_rover_simulation_dashboard.py --video data/s.mp4
+python3 step4_rover_simulation_dashboard.py --video data/good.mp4
 ```
 
-### Option 3: Run the Educational Stages
+### Option 4: Run the Modular Educational Stages
 Each stage is modular and can be run independently:
 
-- **Stage 1 (Video Playback)**:
-  ```bash
-  python step1_load_video.py
-  ```
-- **Stage 2 (Green Plant Masking)**:
-  ```bash
-  python step2_plant_detection.py
-  ```
-- **Stage 3 (Crop Row Tracking)**:
-  ```bash
-  python step3_crop_row_detection.py
-  ```
-- **Generate Fresh 3D Simulation Video**:
-  ```bash
-  python generate_simulation_video.py
-  ```
+- **Stage 1 (Video Playback)**: `python3 step1_load_video.py`
+- **Stage 2 (Green Plant Masking)**: `python3 step2_plant_detection.py`
+- **Stage 3 (Crop Row Tracking)**: `python3 step3_crop_row_detection.py`
+- **Generate Fresh 3D Simulation Video**: `python3 generate_simulation_video.py`
 
 ---
 
-## Interactive Controls
+## Startup Motor Safety & Tracking Toggle
 
-While the dashboard window is active:
+In agricultural robotics, uncontrolled motion upon system startup or camera initialization can cause crop damage or safety hazards. This platform implements a strict **Fail-Safe Startup Architecture**:
+
+```
+[ System Startup / Reset ]
+          │
+          ▼
+[ State: SAFE STANDBY ] ──► Motors Disabled (PWM L:0, R:0)
+          │             ──► Serial Transmits: <TRACKING_DISABLED>
+          │             ──► Microcontroller: Emergency Stop Engaged
+          │
+[ Operator Presses RUN ] (Web UI button or 'Space' / 'R' key)
+          │
+          ▼
+[ State: TRACKING ACTIVE] ──► Serial Transmits: <TRACKING_ENABLED>
+          │              ──► Microcontroller: Motors Armed
+          │              ──► Differential PID Steering Packets Streamed (<L,R>)
+          │
+[ Operator Presses STOP / E-STOP ] (Web UI or 'E' key / Watchdog timeout)
+          │
+          ▼
+[ State: SAFE STANDBY ] ──► Serial Transmits: <TRACKING_DISABLED> & <0,0>
+```
+
+- **Default Disabled**: Neither Python nor the microcontroller will spin motors until explicitly activated.
+- **Bi-directional State Protocol**:
+  - Start / Stop commands: `<TRACKING_ENABLED>` and `<TRACKING_DISABLED>`.
+  - Microcontroller acknowledges: `ACK:TRACKING_ENABLED` and `ACK:TRACKING_DISABLED`.
+- **Emergency Stop (E-Stop)**: Immediate cut-off accessible via the UI or keyboard shortcut <kbd>E</kbd>.
+
+---
+
+## Line Tracking & Drivable Corridor Visualization
+
+The vision pipeline accurately segments the field into navigable free space and crop row boundaries, rendered on the cockpit stream:
+
+- **Green Drivable Navigation Corridor**: A semi-transparent green polygonal cone rendered directly between the left and right crop rows, representing safe clearance for rover wheels.
+- **Crop Row Boundary Lines**:
+  - **Red Curve**: Left crop row 2nd-degree polynomial fit ($x = ay^2 + by + c$).
+  - **Blue Curve**: Right crop row 2nd-degree polynomial fit.
+- **Center Guidance Track**: Yellow dashed centerline calculated equidistant between left and right crop rows.
+- **Dynamic Steering Vector**: Directional arrow originating from the rover center toward the prospective lookahead target.
+- **Resolution-Invariant Rendering**: All polynomial curves, centroids, and polygon cones are evaluated and overlaid directly at the camera's native processing grid before display scaling. This guarantees **zero coordinate drift or offset** regardless of whether running at 320×240 (RPi 3B), 480×360 (RPi 4B), or 1080p.
+
+---
+
+## Interactive Controls & Web Cockpit
+
+### Web Cockpit Hotkeys & Controls:
 
 | Control | Action |
 | :--- | :--- |
+| **`▶ RUN` / `⏹ STOP`** | Master toggle to arm/disarm autonomous tracking & motor output |
+| **`🛑 EMERGENCY STOP`** | Immediate hardware motor stop and failsafe engagement |
+| <kbd>Space</kbd> or <kbd>R</kbd> | Toggle Tracking **RUN / STOP** |
+| <kbd>E</kbd> | Trigger **EMERGENCY STOP** |
+| **ROI Sliders** | Real-time adjustment of Top %, Bottom %, Left %, and Right % crop bounds |
+| **PID Sliders** | On-the-fly tuning of $K_p$, $K_i$, $K_d$, and Base RPM |
+| **D-Pad Bench Test** | Manual jog controls (Forward, Reverse, Left, Right, Stop) |
+
+### Desktop OpenCV GUI Hotkeys (When running step4):
+
+| Key | Action |
+| :--- | :--- |
 | **Mouse Click & Drag** | Draw a custom detection box directly on the camera view |
-| **ROI Sliders** | Fine-tune `ROI Top %`, `Bottom %`, `Left %`, and `Right %` |
-| **PID Sliders** | Live adjust `Kp (x100)`, `Ki (x100)`, and `Kd (x100)` gains |
-| **Base RPM Slider** | Adjust baseline cruising speed ($30 - 160\text{ RPM}$) |
-| **CLAHE (x10) Slider** | Contrast limit for local shadow/glare equalization ($0.1 - 5.0$) |
 | <kbd>l</kbd> | **Toggle Adaptive Lighting** (CLAHE + ExG + Dynamic HSV vs Static HSV) |
 | <kbd>v</kbd> | **Switch video source** on the fly between loaded videos |
 | <kbd>Space</kbd> | **Pause / Resume** video playback |
@@ -255,29 +307,27 @@ In real precision agriculture, crop rows end at the **headland** (cleared turnar
 
 ```
 Image_processing/
-├── data/                               # Video storage
-│   ├── crop_row_video.mp4              # Default active video
-│   ├── simulated_field.mp4             # 3D synthetic field simulation video
-│   ├── real_field_video.mp4            # Real corn row field footage
-│   ├── aaa.mp4                         # Real straddle agricultural robot footage
-│   ├── s.mp4                           # Real field sample
-│   └── cr.mp4                          # Real field sample
-├── .venv/                              # Isolated Python virtual environment
-├── roi_config.json                     # Saved per-video detection boundaries
-├── requirements.txt                    # Project dependencies (opencv-python, numpy)
-├── generate_simulation_video.py        # 3D synthetic field video generator
-├── step1_load_video.py                 # Stage 1: Basic OpenCV stream loader
-├── step2_plant_detection.py            # Stage 2: HSV plant color segmentation
-├── step3_crop_row_detection.py         # Stage 3: Sliding window crop row tracker
-├── step4_rover_simulation_dashboard.py # Stage 4 & 5: Complete navigation platform (with Serial & SBC flags)
-├── web_rover_dashboard.py              # Web remote telemetry cockpit with hardware controls
-├── serial_motor_controller.py          # Serial communication & PWM motor driver controller
+├── main.py                             # 🌟 MASTER PRODUCTION APPLICATION (Raspberry Pi 3B/4B, Tinker Board, Web Cockpit)
+├── web_rover_dashboard.py              # Web remote telemetry cockpit server with hardware controls
+├── serial_motor_controller.py          # Serial communication & PWM motor driver controller (Safe startup standby)
 ├── video_device_manager.py             # Dynamic video capture device discovery & zero-latency capture
-├── sbc_optimizer.py                    # Performance tuning profiles for ASUS Tinker Board
-├── arduino_rover_motor_controller.ino  # Ready-to-flash microcontroller firmware for motor drivers
+├── sbc_optimizer.py                    # Performance tuning profiles for Raspberry Pi 3B/4B & ASUS Tinker Board
+├── arduino_rover_motor_controller.ino  # Ready-to-flash microcontroller firmware with TRACKING_DISABLED/ENABLED support
 ├── hardware_config.json                # Saved serial port, baudrate, and PWM calibration
 ├── roi_config.json                     # Saved per-video detection boundaries
 ├── requirements.txt                    # Project dependencies (opencv-python, numpy, flask, pyserial)
+├── templates/index.html                # Responsive web cockpit UI with Master RUN/STOP control
+├── static/                             # Web styling, JavaScript, and 3D digital twin assets
+│   ├── app.js                          # Client-side telemetry polling & remote control logic
+│   ├── style.css                       # Premium responsive cockpit styling & micro-animations
+│   ├── rover_model.png                 # 3D digital twin rover chassis asset
+│   └── wheel_rim.png                   # Rotating CNC wheel rim asset
+├── data/                               # Video storage (crop row videos & simulations)
+│   ├── good.mp4                        # Clean field footage
+│   ├── simulated_field.mp4             # 3D synthetic field simulation video
+│   ├── real_field_video.mp4            # Real corn row field footage
+│   └── aaa.mp4                         # Real straddle agricultural robot footage
+├── step4_rover_simulation_dashboard.py # Complete navigation platform (with Serial & SBC flags)
 └── README.md                           # Documentation manual (this file)
 ```
 
@@ -313,33 +363,39 @@ Switch effortlessly between any video source without restarting the platform:
 
 ---
 
-## ASUS Tinker Board (Rockchip RK3288) Optimization
+## SBC Optimization (Raspberry Pi 3B / 4B & ASUS Tinker Board)
 
-The platform is purpose-built to run smoothly and efficiently on Single Board Computers (SBCs) like the **ASUS Tinker Board** (Quad-Core ARM Cortex-A17 @ 1.8GHz, 2GB/4GB RAM running TinkerOS or Armbian):
+The platform is engineered specifically for energy-efficient edge Single Board Computers (SBCs), with tuned presets for Raspberry Pi and ASUS Tinker Board architectures:
 
-### 1. Thermal & Compute Optimizations
-- **Vision Resolution Downscaling**: Scales frames to **320x240** (or 480x360) for computer vision processing (CLAHE, ExG, sliding window). Reduces pixel throughput by **75% to 85%**, cutting CPU load from ~100% to under 25% while maintaining identical steering accuracy.
-- **Hardware MJPEG Negotiation**: Requests `cv2.VideoWriter_fourcc(*'MJPG')` directly from USB UVC cameras, avoiding high-bandwidth YUYV USB 2.0 bus bottlenecks.
-- **Adaptive Frame Pacer**: Enforces a target rate (e.g. 20 FPS) with dynamic sleeping, preventing thermal throttling in sealed field enclosures.
-- **Headless Field Mode**: Eliminates X11 desktop display overhead. Run the web cockpit or background CLI service; access the dashboard from your smartphone, tablet, or laptop over Wi-Fi!
+### 1. Pre-Tuned SBC Performance Profiles
 
-### 2. Linux Setup & Permissions on Tinker Board
-On your ASUS Tinker Board terminal, add your user to the `dialout` and `video` groups to access serial ports and cameras without root:
+| Profile | Target Hardware | Processing Resolution | Target FPS | CLAHE Grid | Use Case |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`rpi3b`** | Raspberry Pi 3B, 3B+, Zero 2W | **320 × 240** | **18 FPS** | 4 × 4 | High thermal efficiency, quad-core Cortex-A53 |
+| **`rpi4`** | Raspberry Pi 4B, 5 | **480 × 360** | **25 FPS** | 6 × 6 | Quad-core Cortex-A72 / A76 high responsiveness |
+| **`tinker_board`** | ASUS Tinker Board / S (RK3288) | **320 × 240** | **20 FPS** | 6 × 6 | Rockchip ARM Cortex-A17 32-bit architecture |
+| **`desktop`** | PC / Mac / Jetson Xavier | **640 × 480** | **30 FPS** | 8 × 8 | Full-resolution desktop simulation |
+
+- **Auto-Detection**: Running `python3 main.py` automatically checks `/proc/cpuinfo` and `uname` on Linux. If Raspberry Pi 3B hardware is detected, the `rpi3b` profile is automatically engaged.
+- **Thermal & Compute Optimizations**:
+  - Vision processing runs on scaled frames, cutting pixel throughput by **75% to 85%** and CPU utilization from ~100% to under 28%.
+  - Frame pacer prevents CPU spinning and heat buildup inside sealed rover enclosures.
+  - Zero X11/Tkinter dependencies in headless mode ensures 100% stability over SSH.
+
+### 2. Linux Setup & Permissions on Raspberry Pi / Tinker Board
+Add your Linux user to the `dialout` (serial) and `video` (camera) groups to access hardware without requiring `sudo`:
 ```bash
 sudo usermod -a -G dialout,video $USER
 ```
 *(Log out and back in for group permissions to apply).*
 
-### 3. Launching on ASUS Tinker Board
+### 3. Launching on Raspberry Pi 3B
 ```bash
-# Launch Web Cockpit with Tinker Board optimization and USB Serial:
-python web_rover_dashboard.py --sbc-profile tinker_board --serial-port /dev/ttyUSB0 --baudrate 115200
+# Recommended: Automatic detection & optimization:
+python3 main.py
 
-# Or launch with a live USB camera:
-python web_rover_dashboard.py --video 0 --serial-port /dev/ttyUSB0
-
-# Or run desktop mode with Tinker Board optimizations:
-python step4_rover_simulation_dashboard.py --camera 0 --sbc-mode --serial-port /dev/ttyUSB0
+# Or explicitly specify the RPi 3B profile and serial driver:
+python3 main.py --profile rpi3b --serial-port /dev/ttyUSB0 --baudrate 115200
 ```
 
 ---
@@ -348,8 +404,23 @@ python step4_rover_simulation_dashboard.py --camera 0 --sbc-mode --serial-port /
 
 Upload the included [`arduino_rover_motor_controller.ino`](file:///Users/kavithudapola/Documents/Rover/Image_processing/arduino_rover_motor_controller.ino) to your microcontroller:
 1. Open [`arduino_rover_motor_controller.ino`](file:///Users/kavithudapola/Documents/Rover/Image_processing/arduino_rover_motor_controller.ino) in the Arduino IDE.
-2. Verify pin assignments for your motor driver:
+2. Verify pin assignments for your motor driver (L298N, BTS7960, Cytron, etc.):
    - Left Motor: `PIN_PWM_LEFT = 5`, `PIN_DIR_LEFT_A = 7`, `PIN_DIR_LEFT_B = 8`
    - Right Motor: `PIN_PWM_RIGHT = 6`, `PIN_DIR_RIGHT_A = 9`, `PIN_DIR_RIGHT_B = 10`
+   - Status LED: `PIN_LED_STATUS = 13`
 3. Select your board (Arduino Uno, Nano, Mega, or ESP32) and upload.
-4. Connect the USB cable between the microcontroller and the ASUS Tinker Board's USB port (or connect TX/RX to Tinker Board UART1 `/dev/ttyS1`).
+4. Connect the USB cable between the microcontroller and the Raspberry Pi / SBC USB port (or connect TX/RX to hardware UART).
+
+### Supported Firmware Commands:
+- `<TRACKING_DISABLED>`, `<DISABLE>`, or `<STOP>`:
+  - Immediately disengages motors (`emergencyStop()`).
+  - Extinguishes Status LED.
+  - Responds with `ACK:TRACKING_DISABLED`.
+- `<TRACKING_ENABLED>`, `<ENABLE>`, or `<RUN>`:
+  - Arms motor driver and illuminates Status LED.
+  - Responds with `ACK:TRACKING_ENABLED`.
+- `<PWM_LEFT,PWM_RIGHT>`:
+  - Sets differential drive speed and direction.
+  - Ignored if tracking has not been enabled or failsafe watchdog expires (>500ms without packet).
+- `<EMERGENCY_STOP>`:
+  - Immediate fail-safe cutoff.

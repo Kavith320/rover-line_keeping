@@ -17,10 +17,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const txtConnIp = document.getElementById('txt-conn-ip');
   const txtFooterSbc = document.getElementById('txt-footer-sbc');
   const btnNavEstop = document.getElementById('btn-nav-estop');
+  
+  // --- Master RUN / STOP Tracking Controls ---
+  const btnNavRun = document.getElementById('btn-nav-run');
+  const iconNavRun = document.getElementById('icon-nav-run');
+  const txtNavRun = document.getElementById('txt-nav-run');
+  const btnQuickRun = document.getElementById('btn-quick-run');
+  const iconQuickRun = document.getElementById('icon-quick-run');
+  const txtQuickRun = document.getElementById('txt-quick-run');
 
   // --- Video Stream Viewport ---
   const roverStream = document.getElementById('rover-stream');
   const txtStreamDesc = document.getElementById('txt-stream-desc');
+  const txtOverlayState = document.getElementById('txt-overlay-state');
   const txtOverlayErr = document.getElementById('txt-overlay-err');
   const txtOverlayPwm = document.getElementById('txt-overlay-pwm');
   const txtOverlayAct = document.getElementById('txt-overlay-act');
@@ -127,6 +136,74 @@ document.addEventListener('DOMContentLoaded', () => {
   let availableDevicesLoaded = false;
   let currentPaused = false;
   let isEmergencyStopped = false;
+  let isTrackingActive = false;
+
+  // --- Tracking State Toggle Functions ---
+  async function handleToggleTracking() {
+    try {
+      const res = await fetch('/api/tracking/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        isTrackingActive = Boolean(data.tracking_enabled);
+        updateTrackingButtons(isTrackingActive);
+      }
+    } catch (err) {
+      console.error('Failed to toggle tracking state:', err);
+    }
+  }
+
+  function updateTrackingButtons(active) {
+    isTrackingActive = Boolean(active);
+    if (isTrackingActive) {
+      if (btnNavRun) {
+        btnNavRun.className = 'btn-run-master btn-run-active';
+        if (iconNavRun) iconNavRun.textContent = '⏹';
+        if (txtNavRun) txtNavRun.textContent = 'STOP TRACKING';
+      }
+      if (btnQuickRun) {
+        btnQuickRun.className = 'btn btn-run-action btn-run-active';
+        if (iconQuickRun) iconQuickRun.textContent = '⏹';
+        if (txtQuickRun) txtQuickRun.textContent = 'STOP TRACKING';
+      }
+      if (txtOverlayState) {
+        txtOverlayState.textContent = 'TRACKING ACTIVE';
+        txtOverlayState.className = 'mono text-success';
+      }
+    } else {
+      if (btnNavRun) {
+        btnNavRun.className = 'btn-run-master btn-run-standby';
+        if (iconNavRun) iconNavRun.textContent = '▶';
+        if (txtNavRun) txtNavRun.textContent = 'RUN TRACKING';
+      }
+      if (btnQuickRun) {
+        btnQuickRun.className = 'btn btn-run-action btn-run-standby';
+        if (iconQuickRun) iconQuickRun.textContent = '▶';
+        if (txtQuickRun) txtQuickRun.textContent = 'RUN TRACKING';
+      }
+      if (txtOverlayState) {
+        txtOverlayState.textContent = 'STANDBY (MOTORS OFF)';
+        txtOverlayState.className = 'mono text-warn';
+      }
+    }
+  }
+
+  if (btnNavRun) btnNavRun.addEventListener('click', handleToggleTracking);
+  if (btnQuickRun) btnQuickRun.addEventListener('click', handleToggleTracking);
+
+  // Keyboard Shortcuts: Space or 'R' toggles RUN/STOP, 'E' triggers E-STOP
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space' || e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      handleToggleTracking();
+    } else if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault();
+      handleEstop(isEmergencyStopped ? 'reset' : 'trigger');
+    }
+  });
 
   txtConnIp.textContent = window.location.host;
 
@@ -492,16 +569,24 @@ document.addEventListener('DOMContentLoaded', () => {
     txtVideoName.textContent = d.video || d.active_device || 'Live Feed';
     txtFps.textContent = d.fps.toFixed(1);
 
-    // Status Beacon
-    txtStatus.textContent = d.status.replace(/_/g, ' ');
-    statusBeacon.className = 'badge';
-    if (d.status === 'ROW_FOLLOWING') {
-      statusBeacon.classList.add('badge-success');
-    } else if (d.status === 'APPROACHING_EDGE') {
-      statusBeacon.classList.add('badge-warn');
+    // Status Beacon & Tracking State
+    if (d.tracking_enabled === false) {
+      txtStatus.textContent = 'STANDBY (MOTORS OFF)';
+      statusBeacon.className = 'badge badge-warn';
     } else {
-      statusBeacon.classList.add('badge-danger');
+      txtStatus.textContent = d.status.replace(/_/g, ' ');
+      statusBeacon.className = 'badge';
+      if (d.status === 'ROW_FOLLOWING') {
+        statusBeacon.classList.add('badge-success');
+      } else if (d.status === 'APPROACHING_EDGE') {
+        statusBeacon.classList.add('badge-warn');
+      } else {
+        statusBeacon.classList.add('badge-danger');
+      }
     }
+
+    // Keep Master RUN buttons synchronized with rover telemetry state
+    updateTrackingButtons(Boolean(d.tracking_enabled));
 
     // Serial Status Badge
     if (d.serial) {

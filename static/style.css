@@ -827,6 +827,88 @@ input:checked + .toggle-slider:before {
   color: var(--text-dim);
 }
 
+/* --- MASTER RUN / STOP TRACKING CONTROLS --- */
+.btn-run-master {
+  border-radius: var(--radius-sm);
+  padding: 6px 16px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.btn-run-standby {
+  background: linear-gradient(135deg, #00c853, #007e33);
+  color: #ffffff;
+  border: 1px solid #00e676;
+  box-shadow: 0 0 16px rgba(0, 230, 118, 0.45);
+  animation: run-standby-pulse 2s infinite;
+}
+
+.btn-run-standby:hover {
+  background: #00e676;
+  box-shadow: 0 0 24px rgba(0, 230, 118, 0.75);
+  transform: scale(1.04);
+}
+
+@keyframes run-standby-pulse {
+  0% { box-shadow: 0 0 8px rgba(0, 230, 118, 0.35); }
+  50% { box-shadow: 0 0 20px rgba(0, 230, 118, 0.75); }
+  100% { box-shadow: 0 0 8px rgba(0, 230, 118, 0.35); }
+}
+
+.btn-run-active {
+  background: linear-gradient(135deg, #ff6d00, #dd2c00);
+  color: #ffffff;
+  border: 1px solid #ff9100;
+  box-shadow: 0 0 16px rgba(255, 109, 0, 0.55);
+  animation: run-active-pulse 1.6s infinite;
+}
+
+.btn-run-active:hover {
+  background: #ff3d00;
+  box-shadow: 0 0 24px rgba(255, 61, 0, 0.85);
+  transform: scale(1.04);
+}
+
+@keyframes run-active-pulse {
+  0% { box-shadow: 0 0 8px rgba(255, 109, 0, 0.4); }
+  50% { box-shadow: 0 0 22px rgba(255, 61, 0, 0.85); }
+  100% { box-shadow: 0 0 8px rgba(255, 109, 0, 0.4); }
+}
+
+.btn-run-action {
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.5px;
+  padding: 8px 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-run-action.btn-run-standby {
+  background: linear-gradient(135deg, #00c853, #007e33);
+  color: #fff;
+  border: 1px solid #00e676;
+  box-shadow: 0 0 14px rgba(0, 230, 118, 0.45);
+}
+
+.btn-run-action.btn-run-active {
+  background: linear-gradient(135deg, #ff6d00, #dd2c00);
+  color: #fff;
+  border: 1px solid #ff9100;
+  box-shadow: 0 0 14px rgba(255, 109, 0, 0.55);
+}
+
 /* --- HARDWARE & SERIAL LINK CONTROLS --- */
 .btn-estop-pulse {
   background: linear-gradient(135deg, #d32f2f, #b71c1c);

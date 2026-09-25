@@ -112,15 +112,18 @@ class RoverVisionEngine:
         
         self.paused = False
         self.running = True
+        # CRITICAL SAFETY REQUIREMENT: Tracking and motor drive start DISABLED by default
+        self.tracking_enabled = False
         
         # Telemetry state
         self.telemetry = {
-            "status": "ROW_FOLLOWING",
-            "decision": "INITIALIZING",
-            "decision_color": [0, 255, 0],
+            "status": "TRACKING_DISABLED",
+            "tracking_enabled": False,
+            "decision": "STANDBY (PRESS RUN)",
+            "decision_color": [0, 215, 255],
             "error_px": 0,
-            "speed_l": 100,
-            "speed_r": 100,
+            "speed_l": 0,
+            "speed_r": 0,
             "base_rpm": self.base_rpm,
             "pid": {
                 "kp": self.tk_kp / 100.0,
@@ -269,6 +272,12 @@ class RoverVisionEngine:
                 self.left_pct = int(np.clip(val, 0, self.right_pct - 5))
             elif key == "right_pct":
                 self.right_pct = int(np.clip(val, self.left_pct + 5, 100))
+            elif key == "tracking_enabled":
+                self.tracking_enabled = bool(val)
+                if self.tracking_enabled:
+                    self.motor_controller.enable_tracking()
+                else:
+                    self.motor_controller.disable_tracking()
             elif key == "paused":
                 self.paused = bool(val)
             elif key == "reset":
@@ -300,6 +309,32 @@ class RoverVisionEngine:
                 "left": self.left_pct, "right": self.right_pct
             }
             self.telemetry["paused"] = self.paused
+            self.telemetry["tracking_enabled"] = self.tracking_enabled
+            self.telemetry["serial"] = self.motor_controller.get_status()
+
+    def set_tracking_enabled(self, enabled):
+        """Activates or stops autonomous tracking and serial motor commanding."""
+        with self.lock:
+            self.tracking_enabled = bool(enabled)
+            if self.tracking_enabled:
+                self.motor_controller.enable_tracking()
+            else:
+                self.motor_controller.disable_tracking()
+            self.telemetry["tracking_enabled"] = self.tracking_enabled
+            self.telemetry["serial"] = self.motor_controller.get_status()
+            if not self.tracking_enabled:
+                self.telemetry["status"] = "TRACKING_DISABLED"
+                self.telemetry["decision"] = "STANDBY (PRESS RUN)"
+                self.telemetry["decision_color"] = [0, 215, 255]
+                self.telemetry["speed_l"] = 0
+                self.telemetry["speed_r"] = 0
+            return self.tracking_enabled
+
+    def toggle_tracking(self):
+        """Toggles between active tracking and safe standby."""
+        with self.lock:
+            target = not self.tracking_enabled
+        return self.set_tracking_enabled(target)
 
     def run_worker(self):
         """Worker thread processing camera frames and transmitting serial motor commands."""
@@ -380,88 +415,133 @@ class RoverVisionEngine:
                         speed_l = int(np.clip(self.base_rpm + pid_output, -160, 160))
                         speed_r = int(np.clip(self.base_rpm - pid_output, -160, 160))
                     
-                    # 6. HARDWARE TRANSMISSION: Send PWM commands over serial to motor driver
-                    pwm_l, pwm_r, tx_packet = self.motor_controller.send_differential_drive(speed_l, speed_r)
+                    # 6. HARDWARE TRANSMISSION & SAFETY CHECK
+                    # If tracking is disabled, do NOT command motors (safe 0 RPM standby)
+                    if self.tracking_enabled:
+                        active_speed_l = speed_l
+                        active_speed_r = speed_r
+                        pwm_l, pwm_r, tx_packet = self.motor_controller.send_differential_drive(speed_l, speed_r)
+                        disp_decision = decision
+                        disp_dec_color = dec_color
+                        disp_status = edge_status
+                    else:
+                        active_speed_l = 0
+                        active_speed_r = 0
+                        pwm_l, pwm_r, tx_packet = 0, 0, "<0,0>"
+                        self.motor_controller.send_differential_drive(0, 0)
+                        disp_decision = f"STANDBY: {decision}"
+                        disp_dec_color = (0, 215, 255)
+                        disp_status = "TRACKING_DISABLED"
                         
                     # Advance continuous wheel angular rotation (radians)
-                    self.offset_l = (self.offset_l + speed_l * 0.035) % (2.0 * math.pi)
-                    self.offset_r = (self.offset_r + speed_r * 0.035) % (2.0 * math.pi)
+                    self.offset_l = (self.offset_l + active_speed_l * 0.035) % (2.0 * math.pi)
+                    self.offset_r = (self.offset_r + active_speed_r * 0.035) % (2.0 * math.pi)
                     
-                    # 7. Render crisp Camera View with Overlays
-                    disp_cam = cv2.resize(proc_frame, (disp_cam_w, disp_cam_h))
-                    
-                    # Scale coordinates for display
-                    d_roi_top = int((self.top_pct / 100.0) * disp_cam_h)
-                    d_roi_bottom = int((self.bottom_pct / 100.0) * disp_cam_h)
-                    d_roi_left = int((self.left_pct / 100.0) * disp_cam_w)
-                    d_roi_right = int((self.right_pct / 100.0) * disp_cam_w)
-                    d_cam_cx = disp_cam_w // 2
-                    d_eval_y = int(d_roi_top + 0.70 * (d_roi_bottom - d_roi_top))
-                    d_path_cx = int(d_cam_cx + error_px)
+                    # 7. Render crisp Camera View with exact resolution-aligned overlays
+                    # Draw directly on cam_vis at native proc_frame coordinates:
+                    # Guarantees ZERO coordinate offset at any camera resolution!
+                    cam_vis = proc_frame.copy()
                     
                     if edge_status == "FIELD_EDGE_DETECTED":
-                        stop_y = int(d_roi_top + 0.50 * (d_roi_bottom - d_roi_top))
-                        cv2.line(disp_cam, (d_roi_left, stop_y), (d_roi_right, stop_y), (0, 0, 255), 4)
-                        cv2.putText(disp_cam, ">>> HEADLAND REACHED - ROW TERMINATION <<<",
-                                    (d_roi_left + 15, stop_y - 12), cv2.FONT_HERSHEY_DUPLEX, 0.52, (0, 0, 255), 2)
+                        stop_y = int(roi_top + 0.50 * (roi_bottom - roi_top))
+                        cv2.line(cam_vis, (roi_left, stop_y), (roi_right, stop_y), (0, 0, 255), 3)
+                        cv2.putText(cam_vis, ">>> HEADLAND REACHED <<<",
+                                    (roi_left + 8, max(roi_top + 15, stop_y - 8)), cv2.FONT_HERSHEY_DUPLEX, 0.40, (0, 0, 255), 1)
+                        top_limit = roi_top
                     elif edge_status == "APPROACHING_EDGE":
-                        top_limit = int(edge_y * (disp_cam_h / float(proc_h))) if edge_y is not None else d_roi_top
-                        cv2.line(disp_cam, (d_roi_left, top_limit), (d_roi_right, top_limit), (0, 165, 255), 2)
+                        top_limit = int(edge_y) if edge_y is not None else roi_top
+                        cv2.line(cam_vis, (roi_left, top_limit), (roi_right, top_limit), (0, 165, 255), 2)
                     else:
-                        top_limit = d_roi_top
+                        top_limit = roi_top
                         
                     if edge_status != "FIELD_EDGE_DETECTED":
-                        # Rescale polynomial fits to display resolution
+                        # Drivable Navigation Corridor (Cone) between Crop Rows
+                        y_range = np.linspace(top_limit, roi_bottom, 25).astype(int)
+                        if left_fit is not None and right_fit is not None:
+                            xl_pts = np.polyval(left_fit, y_range).astype(int)
+                            xr_pts = np.polyval(right_fit, y_range).astype(int)
+
+                            corridor_pts = np.vstack([
+                                np.column_stack([xl_pts, y_range]),
+                                np.column_stack([xr_pts[::-1], y_range[::-1]])
+                            ])
+
+                            corridor_overlay = cam_vis.copy()
+                            cv2.fillPoly(corridor_overlay, [corridor_pts], (35, 175, 55))
+                            cv2.addWeighted(corridor_overlay, 0.32, cam_vis, 0.68, 0, cam_vis)
+
+                            # Center segmented target guidance track line
+                            path_mid_x = ((xl_pts + xr_pts) // 2).astype(int)
+                            for i in range(len(y_range) - 1):
+                                if i % 2 == 0:
+                                    cv2.line(cam_vis, (path_mid_x[i], y_range[i]),
+                                             (path_mid_x[i+1], y_range[i+1]), (0, 255, 0), 2, lineType=cv2.LINE_AA)
+
+                        # Left Crop Row Line (Red: 0, 0, 255)
                         if left_fit is not None:
-                            y_eval = np.array([d_roi_bottom, top_limit])
-                            y_proc = y_eval * (float(proc_h) / disp_cam_h)
-                            xl_proc = np.polyval(left_fit, y_proc)
-                            xl_disp = (xl_proc * (float(disp_cam_w) / proc_w)).astype(int)
-                            cv2.line(disp_cam, (xl_disp[0], y_eval[0]), (xl_disp[1], y_eval[1]), (0, 0, 255), 3)
-                            
+                            xl = np.polyval(left_fit, y_range).astype(int)
+                            pts_l = np.column_stack([xl, y_range]).reshape((-1, 1, 2))
+                            cv2.polylines(cam_vis, [pts_l], isClosed=False, color=(0, 0, 255), thickness=2, lineType=cv2.LINE_AA)
+
+                        # Right Crop Row Line (Blue: 255, 0, 0)
                         if right_fit is not None:
-                            y_eval = np.array([d_roi_bottom, top_limit])
-                            y_proc = y_eval * (float(proc_h) / proc_h)
-                            xr_proc = np.polyval(right_fit, y_proc)
-                            xr_disp = (xr_proc * (float(disp_cam_w) / proc_w)).astype(int)
-                            cv2.line(disp_cam, (xr_disp[0], y_eval[0]), (xr_disp[1], y_eval[1]), (255, 0, 0), 3)
-                            
+                            xr = np.polyval(right_fit, y_range).astype(int)
+                            pts_r = np.column_stack([xr, y_range]).reshape((-1, 1, 2))
+                            cv2.polylines(cam_vis, [pts_r], isClosed=False, color=(255, 0, 0), thickness=2, lineType=cv2.LINE_AA)
+
+                        # Detected Crop Plant Centroids (Red on Left, Blue on Right)
                         for pt in left_pts:
-                            px = int(pt[0] * (disp_cam_w / float(proc_w)))
-                            py = int(pt[1] * (disp_cam_h / float(proc_h)))
-                            cv2.circle(disp_cam, (px, py), 4, (0, 0, 255), -1)
+                            cv2.circle(cam_vis, (int(pt[0]), int(pt[1])), 3, (0, 0, 255), -1)
                         for pt in right_pts:
-                            px = int(pt[0] * (disp_cam_w / float(proc_w)))
-                            py = int(pt[1] * (disp_cam_h / float(proc_h)))
-                            cv2.circle(disp_cam, (px, py), 4, (255, 0, 0), -1)
-                            
-                        cv2.arrowedLine(disp_cam, (d_cam_cx, d_eval_y), (d_path_cx, d_eval_y), (0, 255, 255), 3, tipLength=0.25)
-                        cv2.circle(disp_cam, (d_path_cx, d_eval_y), 7, (0, 255, 0), -1)
-                        cv2.circle(disp_cam, (d_cam_cx, d_eval_y), 6, (0, 0, 255), -1)
-                        
-                    # ROI Boundary Box
-                    cv2.rectangle(disp_cam, (d_roi_left, d_roi_top), (d_roi_right, d_roi_bottom), (0, 255, 255), 2)
-                    for cy in range(d_roi_top, d_roi_bottom, 16):
-                        cv2.line(disp_cam, (d_cam_cx, cy), (d_cam_cx, cy + 8), (220, 220, 220), 2)
-                        
-                    # HUD Status Banner
+                            cv2.circle(cam_vis, (int(pt[0]), int(pt[1])), 3, (255, 0, 0), -1)
+
+                        # Steering Target Arrow & Deviation Points
+                        cv2.arrowedLine(cam_vis, (cam_center_x, eval_y), (path_cx, eval_y), (0, 255, 255), 2, tipLength=0.25)
+                        cv2.circle(cam_vis, (path_cx, eval_y), 5, (0, 255, 0), -1)
+                        cv2.circle(cam_vis, (cam_center_x, eval_y), 4, (0, 0, 255), -1)
+
+                    # Yellow ROI Boundary Box
+                    cv2.rectangle(cam_vis, (roi_left, roi_top), (roi_right, roi_bottom), (0, 255, 255), 1)
+
+                    # Forward axis centerline
+                    for cy in range(roi_top, roi_bottom, 14):
+                        cv2.line(cam_vis, (cam_center_x, cy), (cam_center_x, cy + 7), (200, 200, 200), 1)
+
+                    # Scale crisp processed frame to display dimensions
+                    disp_cam = cv2.resize(cam_vis, (disp_cam_w, disp_cam_h), interpolation=cv2.INTER_LINEAR)
+
+                    # Top HUD Status Banner
                     cv2.rectangle(disp_cam, (0, 0), (disp_cam_w, 42), (18, 20, 24), -1)
                     source_name = os.path.basename(str(self.current_source))
                     ser_st = self.motor_controller.get_status()
+
+                    if not self.tracking_enabled:
+                        mode_tag = "STANDBY [MOTORS OFF]"
+                        mode_col = (0, 215, 255)
+                    else:
+                        mode_tag = "RUNNING [MOTORS ON]"
+                        mode_col = (0, 255, 120)
+
                     ser_tag = f"PWM: L{pwm_l} R{pwm_r}" if ser_st["connected"] else "SERIAL: OFF"
-                    
-                    cv2.putText(disp_cam, f"ERR: {error_px:+d}px | {source_name} | {ser_tag}",
-                                (14, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
-                    
-                    light_str = f"ADAPTIVE (Amb:{ambient_val:.0f} Clip:{self.clahe_clip:.1f} Smin:{dyn_s})" if self.use_adaptive else "STATIC HSV"
-                    light_col = (80, 255, 120) if self.use_adaptive else (120, 180, 255)
-                    cv2.putText(disp_cam, f"LIGHT: {light_str} | SBC: {self.sbc.proc_w}x{self.sbc.proc_h}",
-                                (14, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.38, light_col, 1)
+
+                    cv2.putText(disp_cam, f"ERR: {error_px:+d}px | {source_name} | {mode_tag}",
+                                (14, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.42, mode_col, 1)
+
+                    light_str = f"ADAPTIVE (Amb:{ambient_val:.0f} Clip:{self.clahe_clip:.1f})" if self.use_adaptive else "STATIC HSV"
+                    cv2.putText(disp_cam, f"LIGHT: {light_str} | SBC: {self.sbc.proc_w}x{self.sbc.proc_h} | {ser_tag}",
+                                (14, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 220, 240), 1)
+
+                    # If tracking disabled, show prominent watermark in bottom corner
+                    if not self.tracking_enabled:
+                        cv2.rectangle(disp_cam, (disp_cam_w - 245, disp_cam_h - 32), (disp_cam_w - 8, disp_cam_h - 8), (15, 20, 30), -1)
+                        cv2.rectangle(disp_cam, (disp_cam_w - 245, disp_cam_h - 32), (disp_cam_w - 8, disp_cam_h - 8), (0, 215, 255), 1)
+                        cv2.putText(disp_cam, "MOTORS DISABLED (STANDBY)", (disp_cam_w - 238, disp_cam_h - 16),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.37, (0, 215, 255), 1)
                                 
                     # 8. Render Digital Twin Panel
                     panel = s4.render_top_down_panel(
-                        panel_w, panel_h, decision, dec_color, error_px,
-                        speed_l, speed_r, self.offset_l, self.offset_r,
+                        panel_w, panel_h, disp_decision, disp_dec_color, error_px,
+                        active_speed_l, active_speed_r, self.offset_l, self.offset_r,
                         self.pid, edge_status, fwd_density, self.base_rpm, self.frame_count
                     )
                     
@@ -475,17 +555,18 @@ class RoverVisionEngine:
                     # 10. Combined Dashboard View
                     dashboard = np.hstack([disp_cam, panel])
                     
-                    # 11. Pace execution to prevent thermal throttling on Tinker Board
+                    # 11. Pace execution to prevent thermal throttling on Tinker Board / RPi
                     actual_fps = self.sbc.pace_frame()
                     
                     # 12. Update Telemetry State
                     self.telemetry = {
-                        "status": edge_status,
-                        "decision": decision,
-                        "decision_color": [int(dec_color[2]), int(dec_color[1]), int(dec_color[0])], # RGB for CSS
+                        "status": disp_status,
+                        "tracking_enabled": self.tracking_enabled,
+                        "decision": disp_decision,
+                        "decision_color": [int(disp_dec_color[2]), int(disp_dec_color[1]), int(disp_dec_color[0])], # RGB for CSS
                         "error_px": int(error_px),
-                        "speed_l": int(speed_l),
-                        "speed_r": int(speed_r),
+                        "speed_l": int(active_speed_l),
+                        "speed_r": int(active_speed_r),
                         "base_rpm": int(self.base_rpm),
                         "pid": {
                             "kp": float(self.pid.kp),
@@ -603,6 +684,44 @@ def update_control():
             engine.update_control(k, v)
             
     return jsonify({"status": "ok", "telemetry": engine.telemetry})
+
+# --- AUTONOMOUS TRACKING STATE ENDPOINTS ---
+
+@app.route('/api/tracking/start', methods=['POST'])
+def start_tracking():
+    """Enables autonomous tracking and motor commands."""
+    global engine
+    engine.set_tracking_enabled(True)
+    return jsonify({
+        "status": "ok",
+        "tracking_enabled": True,
+        "message": "Tracking started. Motor commanding enabled.",
+        "serial": engine.motor_controller.get_status()
+    })
+
+@app.route('/api/tracking/stop', methods=['POST'])
+def stop_tracking():
+    """Disables autonomous tracking and safely halts motors."""
+    global engine
+    engine.set_tracking_enabled(False)
+    return jsonify({
+        "status": "ok",
+        "tracking_enabled": False,
+        "message": "Tracking stopped. Motors safely disabled.",
+        "serial": engine.motor_controller.get_status()
+    })
+
+@app.route('/api/tracking/toggle', methods=['POST'])
+def toggle_tracking():
+    """Toggles tracking state between active and standby."""
+    global engine
+    new_state = engine.toggle_tracking()
+    return jsonify({
+        "status": "ok",
+        "tracking_enabled": new_state,
+        "message": "Tracking enabled" if new_state else "Tracking disabled",
+        "serial": engine.motor_controller.get_status()
+    })
 
 # --- HARDWARE & SERIAL LINK API ENDPOINTS ---
 

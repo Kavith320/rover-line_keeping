@@ -1,0 +1,12 @@
+{
+  "port": "/dev/ttyUSB0",
+  "baudrate": 115200,
+  "auto_connect": false,
+  "pwm_min": 35,
+  "pwm_max": 255,
+  "invert_left": false,
+  "invert_right": false,
+  "bidirectional": true,
+  "protocol": "bracket",
+  "watchdog_timeout": 0.5
+}

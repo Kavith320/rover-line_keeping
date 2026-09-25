@@ -17,12 +17,31 @@ Key Techniques:
      low-power processing coordinates and high-res display coordinates.
 """
 
+import os
 import cv2
 import numpy as np
 import time
 
 
 PROFILES = {
+    "rpi3b": {
+        "name": "🍓 Raspberry Pi 3B / Zero 2W (320x240 @ 18 FPS)",
+        "proc_w": 320,
+        "proc_h": 240,
+        "target_fps": 18,
+        "clahe_grid": (4, 4),
+        "kernel_size": (3, 3),
+        "desc": "Ultra-lightweight compute for quad-core ARM Cortex-A53 (1GB/4GB). Keeps CPU usage < 45%."
+    },
+    "rpi4": {
+        "name": "🍓 Raspberry Pi 4B / 5 (480x360 @ 25 FPS)",
+        "proc_w": 480,
+        "proc_h": 360,
+        "target_fps": 25,
+        "clahe_grid": (6, 6),
+        "kernel_size": (3, 3),
+        "desc": "Balanced performance for quad-core Cortex-A72/A76."
+    },
     "tinker_board": {
         "name": "🚀 ASUS Tinker Board (Low Power / Thermal Safe)",
         "proc_w": 320,
@@ -51,6 +70,26 @@ PROFILES = {
         "desc": "Maximum precision rendering for development laptops."
     }
 }
+
+
+def detect_sbc_profile():
+    """Detects whether running on Raspberry Pi, ASUS Tinker Board, or desktop."""
+    try:
+        if os.path.exists("/proc/device-tree/model"):
+            with open("/proc/device-tree/model", "r") as f:
+                model = f.read().lower()
+                if "raspberry pi 3" in model or "zero 2" in model:
+                    return "rpi3b"
+                elif "raspberry pi 4" in model or "raspberry pi 5" in model:
+                    return "rpi4"
+                elif "tinker" in model:
+                    return "tinker_board"
+                elif "raspberry pi" in model:
+                    return "rpi3b"
+    except Exception:
+        pass
+    return "rpi3b"
+
 
 
 class SBCOptimizer:

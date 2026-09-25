@@ -126,22 +126,34 @@ void loop() {
       serialBuffer[bufferIndex] = '\0';
       packetStarted = false;
 
-      // Parse "<pwmL,pwmR>"
-      int pwmL = 0;
-      int pwmR = 0;
-      if (sscanf(serialBuffer, "%d,%d", &pwmL, &pwmR) == 2) {
+      // Check for high-level state commands or differential drive PWM
+      if (strcmp(serialBuffer, "TRACKING_DISABLED") == 0 || strcmp(serialBuffer, "DISABLE") == 0 || strcmp(serialBuffer, "STOP") == 0) {
         lastPacketTime = millis();
-        digitalWrite(PIN_LED, !digitalRead(PIN_LED)); // Toggle LED
+        emergencyStop();
+        digitalWrite(PIN_LED, LOW);
+        Serial.println(F("ACK:TRACKING_DISABLED"));
+      } else if (strcmp(serialBuffer, "TRACKING_ENABLED") == 0 || strcmp(serialBuffer, "ENABLE") == 0 || strcmp(serialBuffer, "START") == 0) {
+        lastPacketTime = millis();
+        digitalWrite(PIN_LED, HIGH);
+        Serial.println(F("ACK:TRACKING_ENABLED"));
+      } else {
+        // Parse "<pwmL,pwmR>"
+        int pwmL = 0;
+        int pwmR = 0;
+        if (sscanf(serialBuffer, "%d,%d", &pwmL, &pwmR) == 2) {
+          lastPacketTime = millis();
+          digitalWrite(PIN_LED, !digitalRead(PIN_LED)); // Toggle LED
 
-        // Apply PWM to physical drivers
-        setMotorLeft(pwmL);
-        setMotorRight(pwmR);
+          // Apply PWM to physical drivers
+          setMotorLeft(pwmL);
+          setMotorRight(pwmR);
 
-        // Echo acknowledgment
-        Serial.print(F("ACK:"));
-        Serial.print(pwmL);
-        Serial.print(F(","));
-        Serial.println(pwmR);
+          // Echo acknowledgment
+          Serial.print(F("ACK:"));
+          Serial.print(pwmL);
+          Serial.print(F(","));
+          Serial.println(pwmR);
+        }
       }
     } else if (packetStarted) {
       if (bufferIndex < sizeof(serialBuffer) - 1) {
