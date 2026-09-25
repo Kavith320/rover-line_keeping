@@ -809,6 +809,17 @@ def test_drive():
         "packet": packet.strip()
     })
 
+@app.route('/api/serial/ping', methods=['POST'])
+def ping_microcontroller():
+    """Sends a ping packet to test bidirectional communication with the microcontroller."""
+    global engine
+    success, msg = engine.motor_controller.ping_controller()
+    return jsonify({
+        "status": "ok" if success else "timeout",
+        "message": msg,
+        "serial": engine.motor_controller.get_status()
+    })
+
 @app.route('/api/sbc/profile', methods=['POST'])
 def set_sbc_profile():
     """Switches SBC optimization profile."""

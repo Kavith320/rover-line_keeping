@@ -610,7 +610,11 @@ document.addEventListener('DOMContentLoaded', () => {
       txtPwmL.textContent = `PWM: ${ser.pwm_l}`;
       txtPwmR.textContent = `PWM: ${ser.pwm_r}`;
       txtSerialTx.textContent = ser.last_tx || '<0,0>';
-      terminalPacketLog.textContent = ser.last_tx || '<0,0>';
+      if (ser.last_rx) {
+        terminalPacketLog.textContent = `TX: ${ser.last_tx || '<0,0>'}  |  RX: ${ser.last_rx}`;
+      } else {
+        terminalPacketLog.textContent = ser.last_tx || '<0,0>';
+      }
       txtOverlayPwm.textContent = `L${ser.pwm_l} R${ser.pwm_r}`;
 
       isEmergencyStopped = ser.emergency_stopped;

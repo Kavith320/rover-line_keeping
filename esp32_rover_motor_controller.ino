@@ -75,7 +75,7 @@ const uint8_t  PWM_RESOLUTION     = 8;       // 8-bit resolution (Duty cycle 0 -
 const uint8_t  PWM_CHANNEL_L      = 0;       // LEDC Channel 0
 const uint8_t  PWM_CHANNEL_R      = 1;       // LEDC Channel 1
 
-const uint32_t SERIAL_BAUD_RATE   = 115200;  // Matches Raspberry Pi host baudrate
+const uint32_t SERIAL_BAUDRATE    = 115200;  // Matches Raspberry Pi host baudrate
 const uint32_t WATCHDOG_MS        = 500;     // Safe timeout: Cut power if no host packet in 0.5s
 const int      PWM_SLEW_STEP      = 15;      // Max change per loop cycle (Smooth ramp-up)
 const uint32_t LOOP_INTERVAL_MS   = 10;      // 100 Hz internal motor refresh loop

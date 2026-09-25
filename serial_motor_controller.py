@@ -155,6 +155,12 @@ class SerialMotorController:
         self.motors_enabled = False
         self.tracking_enabled = False
 
+        # Bidirectional Telemetry Feedback from Microcontroller
+        self.last_rx_packet = ""
+        self.last_rx_time = 0
+        self.handshake_verified = False
+        self.rx_thread = None
+
         # Watchdog monitor thread
         self.running = True
         self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
@@ -187,10 +193,33 @@ class SerialMotorController:
                     timeout=0.1,
                     write_timeout=0.1
                 )
-                # Allow Arduino/microcontroller DTR reset settling
-                time.sleep(0.15)
+                # CRITICAL FOR ESP32 & ARDUINO:
+                # Explicitly clear DTR and RTS so the ESP32 is not held in reset or bootloader
+                try:
+                    self.ser.dtr = False
+                    self.ser.rts = False
+                except Exception:
+                    pass
+
                 self.is_open = True
                 self.simulated_mode = False
+                self.handshake_verified = False
+
+                # Launch asynchronous RX reader thread immediately to capture boot messages
+                if self.rx_thread is None or not self.rx_thread.is_alive():
+                    self.rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
+                    self.rx_thread.start()
+
+                # Allow ESP32 FreeRTOS / Arduino bootloader settling (1.5 seconds)
+                time.sleep(1.5)
+
+                # Clear any startup bootloader garbage
+                try:
+                    self.ser.reset_input_buffer()
+                    self.ser.reset_output_buffer()
+                except Exception:
+                    pass
+
                 print(f"[SUCCESS] Connected to Motor Controller on {self.cfg['port']} @ {self.cfg['baudrate']} baud.")
                 # Transmit initial safe disabled status to microcontroller
                 self._raw_send("<0,0>\n")
@@ -203,12 +232,55 @@ class SerialMotorController:
                 self.ser = None
                 self.is_open = False
                 self.simulated_mode = True
+                self.handshake_verified = False
                 err_msg = f"Failed to open {self.cfg['port']}: {e}. Switched to SIMULATED mode."
                 print(f"[WARN] {err_msg}")
                 return False, err_msg
 
+    def _rx_loop(self):
+        """
+        Dedicated background thread continuously reading serial responses & telemetry from microcontroller.
+        Parses acknowledgments (ACK:...), status handshakes, and diagnostic warnings.
+        """
+        while self.running:
+            if self.ser is not None and self.is_open and not self.simulated_mode:
+                try:
+                    raw_line = self.ser.readline()
+                    if raw_line:
+                        line = raw_line.decode("utf-8", errors="ignore").strip()
+                        if line:
+                            self.last_rx_time = time.time()
+                            self.last_rx_packet = line
+                            if any(keyword in line for keyword in ["ACK:", "AGRI-ROVER", "STATUS:", "PONG", "READY"]):
+                                self.handshake_verified = True
+                            if "ERR:" in line or "WARN:" in line:
+                                print(f"[MICROCONTROLLER ALERT] << {line}")
+                            elif "AGRI-ROVER" in line or "ACK:TRACKING" in line:
+                                print(f"[MICROCONTROLLER CONFIRM] << {line}")
+                except Exception:
+                    pass
+            time.sleep(0.01)
+
+    def ping_controller(self):
+        """Sends a ping handshake to verify bidirectional connection with microcontroller."""
+        with self.lock:
+            if not self.is_open or self.simulated_mode:
+                return False, "Not connected to physical hardware"
+            self.last_rx_packet = ""
+            self._raw_send("<PING>\n")
+        
+        # Wait up to 300ms for pong or ack
+        start_wait = time.time()
+        while time.time() - start_wait < 0.3:
+            if "PONG" in self.last_rx_packet or "ACK:" in self.last_rx_packet:
+                self.handshake_verified = True
+                return True, f"Microcontroller verified: {self.last_rx_packet}"
+            time.sleep(0.02)
+        return False, "No response to PING within 300ms"
+
     def disconnect_internal(self):
         """Internal helper to close port without acquiring lock again."""
+        self.handshake_verified = False
         if self.ser is not None:
             try:
                 # Send stop before closing
@@ -242,6 +314,9 @@ class SerialMotorController:
                 "port": self.cfg.get("port", "/dev/ttyUSB0"),
                 "baudrate": self.cfg.get("baudrate", 115200),
                 "last_tx": self.last_tx_packet,
+                "last_rx": self.last_rx_packet,
+                "last_rx_time": self.last_rx_time,
+                "handshake_verified": self.handshake_verified,
                 "pwm_l": self.last_pwm_l,
                 "pwm_r": self.last_pwm_r,
                 "motors_enabled": self.motors_enabled,
