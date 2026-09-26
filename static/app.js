@@ -480,6 +480,9 @@ document.addEventListener('DOMContentLoaded', () => {
     'stop':       { icon: '⏹️', desc: 'STANDBY (HOLD TO DRIVE)', isMoving: false }
   };
 
+  let manualHeartbeatTimer = null;
+  let isSendingManual = false;
+
   async function sendManualDrive(cmd) {
     activeManualCmd = cmd;
     const vis = dirVisuals[cmd] || dirVisuals['stop'];
@@ -494,6 +497,9 @@ document.addEventListener('DOMContentLoaded', () => {
       badgeManualActiveCmd.textContent = cmd.toUpperCase().replace('_', ' ');
       badgeManualActiveCmd.className = vis.isMoving ? 'status-pill pill-success' : 'status-pill pill-warn';
     }
+
+    if (isSendingManual && cmd !== 'stop') return; // Avoid backlog if network latency occurs
+    isSendingManual = true;
 
     try {
       const res = await fetch('/api/serial/manual_drive', {
@@ -514,6 +520,42 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {
       console.error('Manual drive transmission error:', e);
+    } finally {
+      isSendingManual = false;
+    }
+  }
+
+  function startContinuousDrive(cmd) {
+    if (cmd === 'stop') {
+      stopContinuousDrive();
+      return;
+    }
+    activeManualCmd = cmd;
+    sendManualDrive(cmd);
+
+    if (manualHeartbeatTimer) {
+      clearInterval(manualHeartbeatTimer);
+      manualHeartbeatTimer = null;
+    }
+
+    // Stream manual drive heartbeats every 120ms to guarantee uninterrupted motor power while held
+    manualHeartbeatTimer = setInterval(() => {
+      if (activeManualCmd === cmd && cmd !== 'stop') {
+        sendManualDrive(cmd);
+      } else {
+        stopContinuousDrive();
+      }
+    }, 120);
+  }
+
+  function stopContinuousDrive() {
+    if (manualHeartbeatTimer) {
+      clearInterval(manualHeartbeatTimer);
+      manualHeartbeatTimer = null;
+    }
+    if (activeManualCmd !== 'stop') {
+      activeManualCmd = 'stop';
+      sendManualDrive('stop');
     }
   }
 
@@ -523,12 +565,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const onStart = (e) => {
       if (e.cancelable) e.preventDefault();
       btn.classList.add('active');
-      sendManualDrive(cmd);
+      startContinuousDrive(cmd);
     };
     const onEnd = (e) => {
       btn.classList.remove('active');
       if (activeManualCmd === cmd) {
-        sendManualDrive('stop');
+        stopContinuousDrive();
       }
     };
 
@@ -560,17 +602,25 @@ document.addEventListener('DOMContentLoaded', () => {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
     const entry = driveKeyMap[e.code];
-    if (entry && !e.repeat) {
+    if (entry) {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
       }
-      activeDriveKey = e.code;
       const btn = document.getElementById(entry.btnId);
       if (btn) btn.classList.add('active');
       const kbd = document.getElementById(entry.kbdId);
       if (kbd) kbd.classList.add('active-key');
 
-      sendManualDrive(entry.cmd);
+      if (entry.cmd === 'stop') {
+        activeDriveKey = null;
+        stopContinuousDrive();
+        return;
+      }
+
+      if (!e.repeat || activeDriveKey !== e.code) {
+        activeDriveKey = e.code;
+        startContinuousDrive(entry.cmd);
+      }
     }
   });
 
@@ -586,28 +636,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (activeDriveKey === e.code) {
         activeDriveKey = null;
-        sendManualDrive('stop');
+        stopContinuousDrive();
       }
+    }
+  });
+
+  // Safety Window Blur & Visibility Handler: Stop motors if window/tab loses focus
+  window.addEventListener('blur', () => {
+    if (activeDriveKey || activeManualCmd !== 'stop') {
+      activeDriveKey = null;
+      stopContinuousDrive();
+      document.querySelectorAll('.key-cap').forEach(k => k.classList.remove('active-key'));
+      btnCockpitDirs.forEach(b => b.classList.remove('active'));
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && (activeDriveKey || activeManualCmd !== 'stop')) {
+      activeDriveKey = null;
+      stopContinuousDrive();
+      document.querySelectorAll('.key-cap').forEach(k => k.classList.remove('active-key'));
+      btnCockpitDirs.forEach(b => b.classList.remove('active'));
     }
   });
 
   if (btnManualEstop) {
     btnManualEstop.addEventListener('click', () => {
+      stopContinuousDrive();
       handleEstop(isEmergencyStopped ? 'reset' : 'trigger');
     });
   }
 
   // Fallback benchtop button events (if present in Hardware tab)
-  if (btnTestFwd) btnTestFwd.addEventListener('mousedown', () => sendManualDrive('forward'));
-  if (btnTestRev) btnTestRev.addEventListener('mousedown', () => sendManualDrive('reverse'));
-  if (btnTestSpinL) btnTestSpinL.addEventListener('mousedown', () => sendManualDrive('spin_left'));
-  if (btnTestSpinR) btnTestSpinR.addEventListener('mousedown', () => sendManualDrive('spin_right'));
-  if (btnTestStop) btnTestStop.addEventListener('click', () => sendManualDrive('stop'));
+  if (btnTestFwd) btnTestFwd.addEventListener('mousedown', () => startContinuousDrive('forward'));
+  if (btnTestRev) btnTestRev.addEventListener('mousedown', () => startContinuousDrive('reverse'));
+  if (btnTestSpinL) btnTestSpinL.addEventListener('mousedown', () => startContinuousDrive('spin_left'));
+  if (btnTestSpinR) btnTestSpinR.addEventListener('mousedown', () => startContinuousDrive('spin_right'));
+  if (btnTestStop) btnTestStop.addEventListener('click', () => stopContinuousDrive());
   ['mouseup', 'touchend', 'mouseleave'].forEach(evt => {
-    if (btnTestFwd) btnTestFwd.addEventListener(evt, () => sendManualDrive('stop'));
-    if (btnTestRev) btnTestRev.addEventListener(evt, () => sendManualDrive('stop'));
-    if (btnTestSpinL) btnTestSpinL.addEventListener(evt, () => sendManualDrive('stop'));
-    if (btnTestSpinR) btnTestSpinR.addEventListener(evt, () => sendManualDrive('stop'));
+    if (btnTestFwd) btnTestFwd.addEventListener(evt, () => stopContinuousDrive());
+    if (btnTestRev) btnTestRev.addEventListener(evt, () => stopContinuousDrive());
+    if (btnTestSpinL) btnTestSpinL.addEventListener(evt, () => stopContinuousDrive());
+    if (btnTestSpinR) btnTestSpinR.addEventListener(evt, () => stopContinuousDrive());
   });
 
   // Video Device Selection

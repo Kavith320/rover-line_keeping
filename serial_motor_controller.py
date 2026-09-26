@@ -164,6 +164,7 @@ class SerialMotorController:
         # SAFETY FIRST: Motors and autonomous tracking are DISABLED by default on application start
         self.motors_enabled = False
         self.tracking_enabled = False
+        self.manual_mode = False
 
         # Bidirectional Telemetry Feedback from Microcontroller
         self.last_rx_packet = ""
@@ -497,6 +498,10 @@ class SerialMotorController:
         Guarantees 0 PWM if tracking is disabled or emergency stopped.
         """
         with self.lock:
+            # If in manual teleoperation mode, do not let autonomous tracking override manual control
+            if self.manual_mode:
+                return self.last_pwm_l, self.last_pwm_r, self.last_tx_packet
+
             if self.emergency_stopped or not self.motors_enabled or not self.tracking_enabled:
                 pwm_l, pwm_r = 0, 0
             else:
@@ -570,25 +575,35 @@ class SerialMotorController:
                 self._raw_send("<TRACKING_ENABLED>\n")
 
             if command == "forward":
+                self.manual_mode = True
                 pwm_l, pwm_r = base_pwm, base_pwm
             elif command == "reverse":
+                self.manual_mode = True
                 pwm_l, pwm_r = -base_pwm, -base_pwm
             elif command == "spin_left":
+                self.manual_mode = True
                 pwm_l, pwm_r = -base_pwm, base_pwm
             elif command == "spin_right":
+                self.manual_mode = True
                 pwm_l, pwm_r = base_pwm, -base_pwm
             elif command == "turn_left":
+                self.manual_mode = True
                 pwm_l, pwm_r = slow_pwm, base_pwm
             elif command == "turn_right":
+                self.manual_mode = True
                 pwm_l, pwm_r = base_pwm, slow_pwm
             elif command == "rev_left":
+                self.manual_mode = True
                 pwm_l, pwm_r = -slow_pwm, -base_pwm
             elif command == "rev_right":
+                self.manual_mode = True
                 pwm_l, pwm_r = -base_pwm, -slow_pwm
             elif command == "direct" and custom_l is not None and custom_r is not None:
+                self.manual_mode = True
                 pwm_l = max(-pwm_max, min(pwm_max, int(custom_l)))
                 pwm_r = max(-pwm_max, min(pwm_max, int(custom_r)))
             else: # 'stop'
+                self.manual_mode = False
                 pwm_l, pwm_r = 0, 0
 
             # Invert pins if configured
@@ -612,14 +627,16 @@ class SerialMotorController:
         """
         Safety watchdog: if no new drive command has been sent within
         watchdog_timeout seconds, automatically transmits a stop command.
-        Prevents runaway rover if camera, OS, or computer vision hangs.
+        NOTE: This ONLY applies during autonomous line tracking if camera/vision stalls.
+        In manual teleoperation mode, operator has 100% full continuous control
+        and the watchdog NEVER cuts the motors to zero.
         """
         while self.running:
             time.sleep(0.1)
             timeout = self.cfg.get("watchdog_timeout", 0.5)
             with self.lock:
-                if self.is_open and not self.emergency_stopped:
-                    if (time.time() - self.last_tx_time) > timeout:
+                if self.is_open and not self.emergency_stopped and not self.manual_mode and self.tracking_enabled:
+                    if timeout > 0 and (time.time() - self.last_tx_time) > timeout:
                         if self.last_pwm_l != 0 or self.last_pwm_r != 0:
                             self.last_pwm_l = 0
                             self.last_pwm_r = 0

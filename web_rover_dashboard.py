@@ -428,9 +428,9 @@ class RoverVisionEngine:
                     
                     # 6. HARDWARE TRANSMISSION & SAFETY CHECK
                     now_ts = time.time()
-                    is_manual_active = bool((now_ts - self.manual_last_time) < 0.85 and self.manual_command != "stop")
+                    is_manual_active = bool(self.manual_active and self.manual_command != "stop")
                     if is_manual_active:
-                        # Manual teleoperation has exclusive precedence
+                        # Manual teleoperation has exclusive precedence - continuous full control
                         active_speed_l = self.motor_controller.last_pwm_l
                         active_speed_r = self.motor_controller.last_pwm_r
                         pwm_l = self.motor_controller.last_pwm_l
@@ -450,8 +450,9 @@ class RoverVisionEngine:
                         active_speed_l = 0
                         active_speed_r = 0
                         pwm_l, pwm_r, tx_packet = 0, 0, "<0,0>"
-                        if self.motor_controller.last_pwm_l != 0 or self.motor_controller.last_pwm_r != 0:
-                            self.motor_controller.send_differential_drive(0, 0)
+                        if not self.motor_controller.manual_mode:
+                            if self.motor_controller.last_pwm_l != 0 or self.motor_controller.last_pwm_r != 0:
+                                self.motor_controller.send_differential_drive(0, 0)
                         disp_decision = f"STANDBY: {decision}"
                         disp_dec_color = (0, 215, 255)
                         disp_status = "TRACKING_DISABLED"
@@ -822,6 +823,8 @@ def emergency_stop():
     if action == "reset":
         engine.motor_controller.reset_estop()
     else:
+        engine.manual_command = "stop"
+        engine.manual_active = False
         engine.motor_controller.emergency_stop()
     return jsonify({"status": "ok", "serial": engine.motor_controller.get_status()})
 
