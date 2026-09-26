@@ -536,32 +536,77 @@ class SerialMotorController:
         """Enables or disables motor power commands."""
         return self.toggle_tracking(enabled)
 
-    def manual_test_drive(self, command):
+    def manual_drive(self, command, throttle_pct=60, custom_l=None, custom_r=None):
         """
-        Executes manual test motions for benchtop verification.
-        Commands: 'forward', 'reverse', 'spin_left', 'spin_right', 'stop'
+        Executes real-time manual teleoperation commands.
+        Commands:
+          - 'forward'    : Left = +PWM, Right = +PWM
+          - 'reverse'    : Left = -PWM, Right = -PWM
+          - 'spin_left'  : Left = -PWM, Right = +PWM (Counter-rotate)
+          - 'spin_right' : Left = +PWM, Right = -PWM (Counter-rotate)
+          - 'turn_left'  : Left = +PWM * 0.35, Right = +PWM (Forward arc)
+          - 'turn_right' : Left = +PWM, Right = +PWM * 0.35 (Forward arc)
+          - 'rev_left'   : Left = -PWM * 0.35, Right = -PWM (Reverse arc)
+          - 'rev_right'  : Left = -PWM, Right = -PWM * 0.35 (Reverse arc)
+          - 'stop'       : Left = 0, Right = 0
+          - 'direct'     : Left = custom_l, Right = custom_r
         """
         with self.lock:
-            test_pwm = int(self.cfg.get("pwm_max", 255) * 0.55) # 55% power
-            self.emergency_stopped = False
-            self.motors_enabled = True
+            if self.emergency_stopped:
+                return 0, 0, "<0,0>"
+
+            # Calculate base PWM magnitude from throttle percentage (10% to 100%)
+            throttle = max(10, min(100, int(throttle_pct or 60)))
+            pwm_min = self.cfg.get("pwm_min", 35)
+            pwm_max = self.cfg.get("pwm_max", 255)
+            base_pwm = int(pwm_min + (throttle / 100.0) * (pwm_max - pwm_min))
+            base_pwm = max(pwm_min, min(pwm_max, base_pwm))
+            slow_pwm = int(base_pwm * 0.35)
+
+            # Ensure microcontroller is armed if it was in standby
+            if not self.motors_enabled or not self.tracking_enabled:
+                self.motors_enabled = True
+                self.tracking_enabled = True
+                self._raw_send("<TRACKING_ENABLED>\n")
 
             if command == "forward":
-                pwm_l, pwm_r = test_pwm, test_pwm
+                pwm_l, pwm_r = base_pwm, base_pwm
             elif command == "reverse":
-                pwm_l, pwm_r = -test_pwm, -test_pwm
+                pwm_l, pwm_r = -base_pwm, -base_pwm
             elif command == "spin_left":
-                pwm_l, pwm_r = -test_pwm, test_pwm
+                pwm_l, pwm_r = -base_pwm, base_pwm
             elif command == "spin_right":
-                pwm_l, pwm_r = test_pwm, -test_pwm
+                pwm_l, pwm_r = base_pwm, -base_pwm
+            elif command == "turn_left":
+                pwm_l, pwm_r = slow_pwm, base_pwm
+            elif command == "turn_right":
+                pwm_l, pwm_r = base_pwm, slow_pwm
+            elif command == "rev_left":
+                pwm_l, pwm_r = -slow_pwm, -base_pwm
+            elif command == "rev_right":
+                pwm_l, pwm_r = -base_pwm, -slow_pwm
+            elif command == "direct" and custom_l is not None and custom_r is not None:
+                pwm_l = max(-pwm_max, min(pwm_max, int(custom_l)))
+                pwm_r = max(-pwm_max, min(pwm_max, int(custom_r)))
             else: # 'stop'
                 pwm_l, pwm_r = 0, 0
 
+            # Invert pins if configured
+            inv_l = self.cfg.get("invert_left", False)
+            inv_r = self.cfg.get("invert_right", False)
+            actual_l = -pwm_l if inv_l else pwm_l
+            actual_r = -pwm_r if inv_r else pwm_r
+
             self.last_pwm_l = pwm_l
             self.last_pwm_r = pwm_r
-            packet = self.format_packet(pwm_l, pwm_r)
+            self.last_tx_time = time.time()
+            packet = self.format_packet(actual_l, actual_r)
             self._raw_send(packet)
             return pwm_l, pwm_r, packet
+
+    def manual_test_drive(self, command):
+        """Backward-compatible wrapper for manual driving."""
+        return self.manual_drive(command, throttle_pct=55)
 
     def _watchdog_loop(self):
         """

@@ -116,11 +116,20 @@ class RoverVisionEngine:
         self.running = True
         # CRITICAL SAFETY REQUIREMENT: Tracking and motor drive start DISABLED by default
         self.tracking_enabled = False
+        self.manual_active = False
+        self.manual_last_time = 0.0
+        self.manual_command = "stop"
+        self.manual_throttle = 60
         
         # Telemetry state
         self.telemetry = {
             "status": "TRACKING_DISABLED",
             "tracking_enabled": False,
+            "manual": {
+                "active": False,
+                "command": "stop",
+                "throttle": 60
+            },
             "decision": "STANDBY (PRESS RUN)",
             "decision_color": [0, 215, 255],
             "error_px": 0,
@@ -418,8 +427,19 @@ class RoverVisionEngine:
                         speed_r = int(np.clip(self.base_rpm - pid_output, -160, 160))
                     
                     # 6. HARDWARE TRANSMISSION & SAFETY CHECK
-                    # If tracking is disabled, do NOT command motors (safe 0 RPM standby)
-                    if self.tracking_enabled:
+                    now_ts = time.time()
+                    is_manual_active = bool((now_ts - self.manual_last_time) < 0.85 and self.manual_command != "stop")
+                    if is_manual_active:
+                        # Manual teleoperation has exclusive precedence
+                        active_speed_l = self.motor_controller.last_pwm_l
+                        active_speed_r = self.motor_controller.last_pwm_r
+                        pwm_l = self.motor_controller.last_pwm_l
+                        pwm_r = self.motor_controller.last_pwm_r
+                        tx_packet = self.motor_controller.last_tx_packet
+                        disp_decision = f"MANUAL: {self.manual_command.upper()}"
+                        disp_dec_color = (0, 165, 255)
+                        disp_status = "MANUAL_DRIVE"
+                    elif self.tracking_enabled:
                         active_speed_l = speed_l
                         active_speed_r = speed_r
                         pwm_l, pwm_r, tx_packet = self.motor_controller.send_differential_drive(speed_l, speed_r)
@@ -430,7 +450,8 @@ class RoverVisionEngine:
                         active_speed_l = 0
                         active_speed_r = 0
                         pwm_l, pwm_r, tx_packet = 0, 0, "<0,0>"
-                        self.motor_controller.send_differential_drive(0, 0)
+                        if self.motor_controller.last_pwm_l != 0 or self.motor_controller.last_pwm_r != 0:
+                            self.motor_controller.send_differential_drive(0, 0)
                         disp_decision = f"STANDBY: {decision}"
                         disp_dec_color = (0, 215, 255)
                         disp_status = "TRACKING_DISABLED"
@@ -517,7 +538,10 @@ class RoverVisionEngine:
                     source_name = os.path.basename(str(self.current_source))
                     ser_st = self.motor_controller.get_status()
 
-                    if not self.tracking_enabled:
+                    if is_manual_active:
+                        mode_tag = f"MANUAL [{self.manual_command.upper()}]"
+                        mode_col = (0, 165, 255)
+                    elif not self.tracking_enabled:
                         mode_tag = "STANDBY [MOTORS OFF]"
                         mode_col = (0, 215, 255)
                     else:
@@ -607,6 +631,11 @@ class RoverVisionEngine:
                         "paused": self.paused,
                         "fps": float(round(actual_fps, 1)),
                         "serial": self.motor_controller.get_status(),
+                        "manual": {
+                            "active": is_manual_active,
+                            "command": self.manual_command,
+                            "throttle": self.manual_throttle
+                        },
                         "sbc": {
                             "profile": self.sbc.profile_key,
                             "name": self.sbc.profile["name"],
@@ -796,20 +825,41 @@ def emergency_stop():
         engine.motor_controller.emergency_stop()
     return jsonify({"status": "ok", "serial": engine.motor_controller.get_status()})
 
-@app.route('/api/serial/test_drive', methods=['POST'])
-def test_drive():
-    """Executes momentary benchtop motor test motion."""
+@app.route('/api/serial/manual_drive', methods=['POST'])
+def manual_drive():
+    """Handles real-time manual driving & teleoperation commands."""
     global engine
     payload = request.get_json(force=True) or {}
     command = payload.get("command", "stop")
-    pwml, pwmr, packet = engine.motor_controller.manual_test_drive(command)
+    throttle = int(payload.get("throttle", 60))
+    custom_l = payload.get("pwml", None)
+    custom_r = payload.get("pwmr", None)
+
+    engine.manual_command = command
+    engine.manual_throttle = throttle
+    engine.manual_last_time = time.time() if command != "stop" else 0.0
+    engine.manual_active = (command != "stop")
+
+    pwml, pwmr, packet = engine.motor_controller.manual_drive(
+        command=command,
+        throttle_pct=throttle,
+        custom_l=custom_l,
+        custom_r=custom_r
+    )
     return jsonify({
         "status": "ok",
         "command": command,
+        "throttle": throttle,
         "pwm_l": pwml,
         "pwm_r": pwmr,
-        "packet": packet.strip()
+        "packet": packet.strip(),
+        "serial": engine.motor_controller.get_status()
     })
+
+@app.route('/api/serial/test_drive', methods=['POST'])
+def test_drive():
+    """Compatibility alias for manual driving."""
+    return manual_drive()
 
 @app.route('/api/serial/ping', methods=['POST'])
 def ping_microcontroller():

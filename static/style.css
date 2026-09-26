@@ -1263,3 +1263,290 @@ input:checked + .toggle-slider:before {
   }
 }
 
+/* ==============================================================================
+   MANUAL TELEOPERATION COCKPIT STYLES
+   ============================================================================== */
+.manual-cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.cockpit-dpad-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 0 6px 0;
+}
+
+.cockpit-dpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.btn-cockpit-dir {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: var(--radius-md);
+  padding: 12px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: all 0.12s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25);
+}
+
+.btn-cockpit-dir .dir-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  margin-bottom: 3px;
+  transition: transform 0.1s ease;
+}
+
+.btn-cockpit-dir .dir-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.btn-cockpit-dir .dir-key {
+  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  margin-top: 2px;
+}
+
+.btn-cockpit-dir:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--neon-cyan);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 215, 255, 0.2);
+}
+
+.btn-cockpit-dir:active, .btn-cockpit-dir.active {
+  background: var(--neon-green) !important;
+  color: #050a0e !important;
+  border-color: #00ff88 !important;
+  transform: translateY(1px) scale(0.97);
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.6) !important;
+}
+
+.btn-cockpit-dir:active .dir-key, .btn-cockpit-dir.active .dir-key {
+  color: #050a0e !important;
+  font-weight: 700;
+}
+
+.btn-dir-primary {
+  border-color: rgba(0, 215, 255, 0.4);
+  background: rgba(0, 215, 255, 0.05);
+}
+
+.btn-cockpit-brake {
+  border-color: var(--alert-red) !important;
+  background: rgba(255, 82, 82, 0.14) !important;
+}
+
+.btn-cockpit-brake:hover {
+  background: rgba(255, 82, 82, 0.25) !important;
+  border-color: #ff5252 !important;
+}
+
+.btn-cockpit-brake:active, .btn-cockpit-brake.active {
+  background: var(--alert-red) !important;
+  color: #fff !important;
+  box-shadow: 0 0 16px rgba(255, 82, 82, 0.7) !important;
+}
+
+.speed-presets-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-speed-preset {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: var(--radius-sm);
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-speed-preset:hover {
+  border-color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.btn-speed-preset.active {
+  border-color: var(--neon-cyan);
+  background: rgba(0, 215, 255, 0.12);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 215, 255, 0.25);
+}
+
+.btn-speed-preset .preset-icon {
+  font-size: 1.1rem;
+}
+
+.btn-speed-preset .preset-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.btn-speed-preset .preset-val {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+}
+
+.keyboard-legend-wrap {
+  margin-top: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.legend-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.key-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+  font-size: 0.75rem;
+}
+
+.key-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.key-item kbd {
+  background: #11151a;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-family: var(--font-mono, monospace);
+  color: #fff;
+  transition: all 0.1s ease;
+}
+
+.key-item kbd.active-key {
+  background: var(--neon-cyan);
+  color: #000;
+  border-color: #00e5ff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.7);
+  transform: translateY(1px);
+}
+
+.teleop-vector-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.vector-arrow-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(0, 215, 255, 0.1);
+  border: 2px solid var(--neon-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.vector-arrow-circle.active-vector {
+  background: rgba(0, 255, 136, 0.2);
+  border-color: var(--neon-green);
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.4);
+}
+
+.vector-text-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#txt-vector-state {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+#txt-vector-sub {
+  font-size: 0.72rem;
+}
+
+.power-meter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+}
+
+.power-lbl {
+  width: 90px;
+  font-weight: 700;
+  font-size: 0.7rem;
+}
+
+.power-bar-wrap {
+  flex-grow: 1;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.power-bar-fill {
+  height: 100%;
+  transition: width 0.1s ease;
+}
+
+.power-val {
+  width: 45px;
+  text-align: right;
+  font-weight: 700;
+}
+
+.fill-left {
+  background: linear-gradient(90deg, #0088ff, #00e5ff);
+}
+
+.fill-right {
+  background: linear-gradient(90deg, #ff9900, #ffea00);
+}
+

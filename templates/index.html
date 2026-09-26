@@ -117,6 +117,10 @@
           <span id="txt-btn-light">Toggle Light</span>
         </button>
 
+        <button id="btn-quick-manual" class="btn btn-secondary" title="Open Manual Drive Cockpit">
+          <span>🎮 Manual Drive</span>
+        </button>
+
         <div class="video-select-wrap">
           <label for="select-device" class="select-label">Capture Source:</label>
           <select id="select-device" class="select-dropdown">
@@ -268,7 +272,8 @@
     <section class="controls-card">
       <div class="controls-header">
         <div class="controls-tabs">
-          <button class="ctrl-tab active" data-tab="hardware" id="tab-btn-hardware">🔌 Hardware & Serial Link</button>
+          <button class="ctrl-tab active" data-tab="manual" id="tab-btn-manual">🎮 Manual Drive Cockpit</button>
+          <button class="ctrl-tab" data-tab="hardware" id="tab-btn-hardware">🔌 Hardware & Serial Link</button>
           <button class="ctrl-tab" data-tab="pid" id="tab-btn-pid">PID Steering Gains</button>
           <button class="ctrl-tab" data-tab="roi" id="tab-btn-roi">Camera ROI Calibration</button>
           <button class="ctrl-tab" data-tab="light" id="tab-btn-light">Adaptive Lighting</button>
@@ -276,8 +281,172 @@
         <button id="btn-reset-defaults" class="btn btn-outline" title="Reset current settings to defaults">Reset Defaults</button>
       </div>
 
-      <!-- TAB 1: Hardware & Serial Link Panel -->
-      <div class="tab-panel active" id="panel-hardware">
+      <!-- TAB 1: Manual Teleoperation Cockpit -->
+      <div class="tab-panel active" id="panel-manual">
+        <div class="manual-cockpit-grid">
+
+          <!-- Card 1: 8-Direction Digital D-Pad -->
+          <div class="hardware-card cockpit-dpad-card">
+            <div class="card-head">
+              <h4>🕹️ 8-Direction Drive Pad</h4>
+              <span id="badge-manual-status" class="status-pill pill-success">READY</span>
+            </div>
+            <p class="card-subtitle">Click, touch, or hold down to steer rover. Automatically brakes upon release.</p>
+
+            <div class="cockpit-dpad-wrap">
+              <div class="cockpit-dpad-grid">
+                <!-- Row 1: Arc Left, Forward, Arc Right -->
+                <button class="btn-cockpit-dir" id="btn-drive-turn-l" data-cmd="turn_left" title="Arc Turn Left (Key Q)">
+                  <span class="dir-icon">↖️</span>
+                  <span class="dir-label">ARC L</span>
+                  <span class="dir-key">[Q]</span>
+                </button>
+                <button class="btn-cockpit-dir btn-dir-primary" id="btn-drive-fwd" data-cmd="forward" title="Drive Forward (Key W / ↑)">
+                  <span class="dir-icon">⬆️</span>
+                  <span class="dir-label">FORWARD</span>
+                  <span class="dir-key">[W]</span>
+                </button>
+                <button class="btn-cockpit-dir" id="btn-drive-turn-r" data-cmd="turn_right" title="Arc Turn Right (Key E)">
+                  <span class="dir-icon">↗️</span>
+                  <span class="dir-label">ARC R</span>
+                  <span class="dir-key">[E]</span>
+                </button>
+
+                <!-- Row 2: Spin Left, Active Stop, Spin Right -->
+                <button class="btn-cockpit-dir" id="btn-drive-spin-l" data-cmd="spin_left" title="Pivot Spin Left (Key A / ←)">
+                  <span class="dir-icon">↩️</span>
+                  <span class="dir-label">SPIN L</span>
+                  <span class="dir-key">[A]</span>
+                </button>
+                <button class="btn-cockpit-dir btn-cockpit-brake" id="btn-drive-stop" data-cmd="stop" title="Active Brake / Stop (Spacebar)">
+                  <span class="dir-icon">🛑</span>
+                  <span class="dir-label">BRAKE</span>
+                  <span class="dir-key">[SPACE]</span>
+                </button>
+                <button class="btn-cockpit-dir" id="btn-drive-spin-r" data-cmd="spin_right" title="Pivot Spin Right (Key D / →)">
+                  <span class="dir-icon">↪️</span>
+                  <span class="dir-label">SPIN R</span>
+                  <span class="dir-key">[D]</span>
+                </button>
+
+                <!-- Row 3: Reverse Arc Left, Reverse, Reverse Arc Right -->
+                <button class="btn-cockpit-dir" id="btn-drive-rev-l" data-cmd="rev_left" title="Reverse Arc Left (Key Z)">
+                  <span class="dir-icon">↙️</span>
+                  <span class="dir-label">REV L</span>
+                  <span class="dir-key">[Z]</span>
+                </button>
+                <button class="btn-cockpit-dir btn-dir-primary" id="btn-drive-rev" data-cmd="reverse" title="Drive Reverse (Key S / ↓)">
+                  <span class="dir-icon">⬇️</span>
+                  <span class="dir-label">REVERSE</span>
+                  <span class="dir-key">[S]</span>
+                </button>
+                <button class="btn-cockpit-dir" id="btn-drive-rev-r" data-cmd="rev_right" title="Reverse Arc Right (Key C)">
+                  <span class="dir-icon">↘️</span>
+                  <span class="dir-label">REV R</span>
+                  <span class="dir-key">[C]</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Speed Throttle & Keyboard Teleop Guide -->
+          <div class="hardware-card cockpit-throttle-card">
+            <div class="card-head">
+              <h4>⚡ Speed Throttle & Presets</h4>
+              <span id="badge-throttle-pct" class="status-pill pill-success mono">60% POWER</span>
+            </div>
+
+            <div class="hw-form-group">
+              <div class="slider-header">
+                <label for="range-manual-throttle">Manual Throttle (Speed Scaling):</label>
+                <span id="val-manual-throttle" class="slider-val mono">60% (~153 PWM)</span>
+              </div>
+              <input type="range" id="range-manual-throttle" min="15" max="100" value="60" class="range-slider">
+            </div>
+
+            <!-- Speed Presets -->
+            <div class="speed-presets-group">
+              <button class="btn-speed-preset" data-speed="25" id="btn-preset-crawl">
+                <span class="preset-icon">🐢</span>
+                <span class="preset-name">CRAWL</span>
+                <span class="preset-val">25% (Precision)</span>
+              </button>
+              <button class="btn-speed-preset active" data-speed="60" id="btn-preset-cruise">
+                <span class="preset-icon">🚜</span>
+                <span class="preset-name">CRUISE</span>
+                <span class="preset-val">60% (Field)</span>
+              </button>
+              <button class="btn-speed-preset" data-speed="100" id="btn-preset-sprint">
+                <span class="preset-icon">⚡</span>
+                <span class="preset-name">SPRINT</span>
+                <span class="preset-val">100% (Transit)</span>
+              </button>
+            </div>
+
+            <div class="keyboard-legend-wrap">
+              <div class="legend-header">⌨️ Keyboard Direct Drive Active:</div>
+              <div class="key-legend-grid">
+                <div class="key-item"><kbd id="kbd-w">W</kbd> / <kbd id="kbd-up">↑</kbd> <span>Forward</span></div>
+                <div class="key-item"><kbd id="kbd-s">S</kbd> / <kbd id="kbd-down">↓</kbd> <span>Reverse</span></div>
+                <div class="key-item"><kbd id="kbd-a">A</kbd> / <kbd id="kbd-left">←</kbd> <span>Spin Left</span></div>
+                <div class="key-item"><kbd id="kbd-d">D</kbd> / <kbd id="kbd-right">→</kbd> <span>Spin Right</span></div>
+                <div class="key-item"><kbd id="kbd-q">Q</kbd> / <kbd id="kbd-e">E</kbd> <span>Arc Turns</span></div>
+                <div class="key-item"><kbd id="kbd-space">SPACE</kbd> <span>Stop / Brake</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Live Twin-Motor Dynamics & Telemetry Feedback -->
+          <div class="hardware-card cockpit-telemetry-card">
+            <div class="card-head">
+              <h4>📊 Live Teleoperation Feedback</h4>
+              <span id="badge-manual-active-cmd" class="status-pill pill-warn">STANDBY</span>
+            </div>
+
+            <div class="teleop-vector-box">
+              <div class="vector-arrow-circle" id="vector-arrow-circle">
+                <span id="vector-icon">⏹️</span>
+              </div>
+              <div class="vector-text-desc">
+                <span id="txt-vector-state" class="mono text-highlight">STANDBY (HOLD KEY/BUTTON TO DRIVE)</span>
+                <span id="txt-vector-sub" class="text-muted">Direct serial packets are sent to ESP32</span>
+              </div>
+            </div>
+
+            <div class="live-power-meters">
+              <div class="power-meter-row">
+                <span class="power-lbl text-left-track">LEFT MOTOR:</span>
+                <div class="power-bar-wrap">
+                  <div class="power-bar-fill fill-left" id="meter-manual-l" style="width: 0%;"></div>
+                </div>
+                <span class="power-val mono" id="val-manual-pwm-l">0</span>
+              </div>
+              <div class="power-meter-row">
+                <span class="power-lbl text-right-track">RIGHT MOTOR:</span>
+                <div class="power-bar-wrap">
+                  <div class="power-bar-fill fill-right" id="meter-manual-r" style="width: 0%;"></div>
+                </div>
+                <span class="power-val mono" id="val-manual-pwm-r">0</span>
+              </div>
+            </div>
+
+            <div class="terminal-box" style="margin-top: 14px;">
+              <div class="terminal-title">SERIAL HARDWARE TX PACKET:</div>
+              <code id="txt-manual-packet-log">&lt;0, 0&gt;</code>
+            </div>
+
+            <div class="estop-card-footer" style="margin-top: 14px;">
+              <button id="btn-manual-estop" class="btn btn-danger full-width">
+                🚨 EMERGENCY STOP (CUT POWER)
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- TAB 2: Hardware & Serial Link Panel -->
+      <div class="tab-panel" id="panel-hardware">
         <div class="hardware-grid">
           <!-- Card 1: Serial Link Connection -->
           <div class="hardware-card">

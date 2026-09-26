@@ -100,7 +100,28 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnApplyCamera = document.getElementById('btn-apply-camera');
   const btnEstopCard = document.getElementById('btn-estop-card');
 
-  // Benchtop D-Pad Test Buttons
+  // --- Manual Teleoperation Cockpit Elements ---
+  const btnQuickManual = document.getElementById('btn-quick-manual');
+  const tabBtnManual = document.getElementById('tab-btn-manual');
+  const badgeManualStatus = document.getElementById('badge-manual-status');
+  const badgeThrottlePct = document.getElementById('badge-throttle-pct');
+  const rangeManualThrottle = document.getElementById('range-manual-throttle');
+  const valManualThrottle = document.getElementById('val-manual-throttle');
+  const btnCockpitDirs = document.querySelectorAll('.btn-cockpit-dir');
+  const btnSpeedPresets = document.querySelectorAll('.btn-speed-preset');
+  const badgeManualActiveCmd = document.getElementById('badge-manual-active-cmd');
+  const vectorArrowCircle = document.getElementById('vector-arrow-circle');
+  const vectorIcon = document.getElementById('vector-icon');
+  const txtVectorState = document.getElementById('txt-vector-state');
+  const txtVectorSub = document.getElementById('txt-vector-sub');
+  const meterManualL = document.getElementById('meter-manual-l');
+  const meterManualR = document.getElementById('meter-manual-r');
+  const valManualPwmL = document.getElementById('val-manual-pwm-l');
+  const valManualPwmR = document.getElementById('val-manual-pwm-r');
+  const txtManualPacketLog = document.getElementById('txt-manual-packet-log');
+  const btnManualEstop = document.getElementById('btn-manual-estop');
+
+  // Benchtop D-Pad Test Buttons (Fallback)
   const btnTestFwd = document.getElementById('btn-test-fwd');
   const btnTestRev = document.getElementById('btn-test-rev');
   const btnTestSpinL = document.getElementById('btn-test-spin-l');
@@ -404,37 +425,189 @@ document.addEventListener('DOMContentLoaded', () => {
     handleEstop(isEmergencyStopped ? 'reset' : 'trigger');
   });
 
-  // Benchtop D-Pad Test Drive Commands
-  async function sendTestDrive(cmd) {
+  // ==============================================================================
+  // FULL MANUAL TELEOPERATION COCKPIT CONTROLLER
+  // ==============================================================================
+  let currentManualThrottle = 60;
+  let activeManualCmd = 'stop';
+  let activeDriveKey = null;
+
+  function updateThrottleUI(val) {
+    if (valManualThrottle) {
+      const approxPwm = Math.round(35 + (val / 100.0) * (255 - 35));
+      valManualThrottle.textContent = `${val}% (~${approxPwm} PWM)`;
+    }
+    if (badgeThrottlePct) badgeThrottlePct.textContent = `${val}% POWER`;
+    btnSpeedPresets.forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.speed, 10) === val);
+    });
+  }
+
+  if (rangeManualThrottle) {
+    rangeManualThrottle.addEventListener('input', () => {
+      currentManualThrottle = parseInt(rangeManualThrottle.value, 10);
+      updateThrottleUI(currentManualThrottle);
+    });
+  }
+
+  btnSpeedPresets.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const spd = parseInt(btn.dataset.speed, 10);
+      currentManualThrottle = spd;
+      if (rangeManualThrottle) rangeManualThrottle.value = spd;
+      updateThrottleUI(spd);
+    });
+  });
+
+  if (btnQuickManual && tabBtnManual) {
+    btnQuickManual.addEventListener('click', (e) => {
+      e.preventDefault();
+      tabBtnManual.click();
+      tabBtnManual.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  const dirVisuals = {
+    'forward':    { icon: '⬆️', desc: 'DRIVING FORWARD', isMoving: true },
+    'reverse':    { icon: '⬇️', desc: 'DRIVING REVERSE', isMoving: true },
+    'spin_left':  { icon: '↩️', desc: 'PIVOT SPIN LEFT', isMoving: true },
+    'spin_right': { icon: '↪️', desc: 'PIVOT SPIN RIGHT', isMoving: true },
+    'turn_left':  { icon: '↖️', desc: 'ARC TURN LEFT', isMoving: true },
+    'turn_right': { icon: '↗️', desc: 'ARC TURN RIGHT', isMoving: true },
+    'rev_left':   { icon: '↙️', desc: 'REVERSE ARC LEFT', isMoving: true },
+    'rev_right':  { icon: '↘️', desc: 'REVERSE ARC RIGHT', isMoving: true },
+    'stop':       { icon: '⏹️', desc: 'STANDBY (HOLD TO DRIVE)', isMoving: false }
+  };
+
+  async function sendManualDrive(cmd) {
+    activeManualCmd = cmd;
+    const vis = dirVisuals[cmd] || dirVisuals['stop'];
+
+    if (vectorIcon) vectorIcon.textContent = vis.icon;
+    if (txtVectorState) txtVectorState.textContent = vis.desc;
+    if (vectorArrowCircle) {
+      if (vis.isMoving) vectorArrowCircle.classList.add('active-vector');
+      else vectorArrowCircle.classList.remove('active-vector');
+    }
+    if (badgeManualActiveCmd) {
+      badgeManualActiveCmd.textContent = cmd.toUpperCase().replace('_', ' ');
+      badgeManualActiveCmd.className = vis.isMoving ? 'status-pill pill-success' : 'status-pill pill-warn';
+    }
+
     try {
-      await fetch('/api/serial/test_drive', {
+      const res = await fetch('/api/serial/manual_drive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: cmd })
+        body: JSON.stringify({
+          command: cmd,
+          throttle: currentManualThrottle
+        })
       });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        if (txtManualPacketLog) txtManualPacketLog.textContent = data.packet || '<0,0>';
+        if (valManualPwmL) valManualPwmL.textContent = data.pwm_l;
+        if (valManualPwmR) valManualPwmR.textContent = data.pwm_r;
+        if (meterManualL) meterManualL.style.width = `${Math.min(100, Math.abs(data.pwm_l) / 2.55)}%`;
+        if (meterManualR) meterManualR.style.width = `${Math.min(100, Math.abs(data.pwm_r) / 2.55)}%`;
+      }
     } catch (e) {
-      console.error('Test drive error:', e);
+      console.error('Manual drive transmission error:', e);
     }
   }
 
-  btnTestFwd.addEventListener('mousedown', () => sendTestDrive('forward'));
-  btnTestRev.addEventListener('mousedown', () => sendTestDrive('reverse'));
-  btnTestSpinL.addEventListener('mousedown', () => sendTestDrive('spin_left'));
-  btnTestSpinR.addEventListener('mousedown', () => sendTestDrive('spin_right'));
-  btnTestStop.addEventListener('click', () => sendTestDrive('stop'));
+  // D-Pad Direction Button Listeners (Mouse + Touch + Mobile Dead-Man Safety)
+  btnCockpitDirs.forEach(btn => {
+    const cmd = btn.dataset.cmd;
+    const onStart = (e) => {
+      if (e.cancelable) e.preventDefault();
+      btn.classList.add('active');
+      sendManualDrive(cmd);
+    };
+    const onEnd = (e) => {
+      btn.classList.remove('active');
+      if (activeManualCmd === cmd) {
+        sendManualDrive('stop');
+      }
+    };
 
-  // Mobile touch support for test buttons
-  btnTestFwd.addEventListener('touchstart', (e) => { e.preventDefault(); sendTestDrive('forward'); });
-  btnTestRev.addEventListener('touchstart', (e) => { e.preventDefault(); sendTestDrive('reverse'); });
-  btnTestSpinL.addEventListener('touchstart', (e) => { e.preventDefault(); sendTestDrive('spin_left'); });
-  btnTestSpinR.addEventListener('touchstart', (e) => { e.preventDefault(); sendTestDrive('spin_right'); });
+    btn.addEventListener('mousedown', onStart);
+    btn.addEventListener('touchstart', onStart, { passive: false });
 
-  // On release, send stop
+    btn.addEventListener('mouseup', onEnd);
+    btn.addEventListener('mouseleave', onEnd);
+    btn.addEventListener('touchend', onEnd);
+    btn.addEventListener('touchcancel', onEnd);
+  });
+
+  // Global Keyboard Teleoperation Driving
+  const driveKeyMap = {
+    'KeyW':        { cmd: 'forward',    btnId: 'btn-drive-fwd',     kbdId: 'kbd-w' },
+    'ArrowUp':     { cmd: 'forward',    btnId: 'btn-drive-fwd',     kbdId: 'kbd-up' },
+    'KeyS':        { cmd: 'reverse',    btnId: 'btn-drive-rev',     kbdId: 'kbd-s' },
+    'ArrowDown':   { cmd: 'reverse',    btnId: 'btn-drive-rev',     kbdId: 'kbd-down' },
+    'KeyA':        { cmd: 'spin_left',  btnId: 'btn-drive-spin-l',   kbdId: 'kbd-a' },
+    'ArrowLeft':   { cmd: 'spin_left',  btnId: 'btn-drive-spin-l',   kbdId: 'kbd-left' },
+    'KeyD':        { cmd: 'spin_right', btnId: 'btn-drive-spin-r',   kbdId: 'kbd-d' },
+    'ArrowRight':  { cmd: 'spin_right', btnId: 'btn-drive-spin-r',   kbdId: 'kbd-right' },
+    'KeyQ':        { cmd: 'turn_left',  btnId: 'btn-drive-turn-l',   kbdId: 'kbd-q' },
+    'KeyE':        { cmd: 'turn_right', btnId: 'btn-drive-turn-r',   kbdId: 'kbd-e' },
+    'Space':       { cmd: 'stop',       btnId: 'btn-drive-stop',     kbdId: 'kbd-space' }
+  };
+
+  window.addEventListener('keydown', (e) => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+    const entry = driveKeyMap[e.code];
+    if (entry && !e.repeat) {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+      activeDriveKey = e.code;
+      const btn = document.getElementById(entry.btnId);
+      if (btn) btn.classList.add('active');
+      const kbd = document.getElementById(entry.kbdId);
+      if (kbd) kbd.classList.add('active-key');
+
+      sendManualDrive(entry.cmd);
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+    const entry = driveKeyMap[e.code];
+    if (entry) {
+      const btn = document.getElementById(entry.btnId);
+      if (btn) btn.classList.remove('active');
+      const kbd = document.getElementById(entry.kbdId);
+      if (kbd) kbd.classList.remove('active-key');
+
+      if (activeDriveKey === e.code) {
+        activeDriveKey = null;
+        sendManualDrive('stop');
+      }
+    }
+  });
+
+  if (btnManualEstop) {
+    btnManualEstop.addEventListener('click', () => {
+      handleEstop(isEmergencyStopped ? 'reset' : 'trigger');
+    });
+  }
+
+  // Fallback benchtop button events (if present in Hardware tab)
+  if (btnTestFwd) btnTestFwd.addEventListener('mousedown', () => sendManualDrive('forward'));
+  if (btnTestRev) btnTestRev.addEventListener('mousedown', () => sendManualDrive('reverse'));
+  if (btnTestSpinL) btnTestSpinL.addEventListener('mousedown', () => sendManualDrive('spin_left'));
+  if (btnTestSpinR) btnTestSpinR.addEventListener('mousedown', () => sendManualDrive('spin_right'));
+  if (btnTestStop) btnTestStop.addEventListener('click', () => sendManualDrive('stop'));
   ['mouseup', 'touchend', 'mouseleave'].forEach(evt => {
-    btnTestFwd.addEventListener(evt, () => sendTestDrive('stop'));
-    btnTestRev.addEventListener(evt, () => sendTestDrive('stop'));
-    btnTestSpinL.addEventListener(evt, () => sendTestDrive('stop'));
-    btnTestSpinR.addEventListener(evt, () => sendTestDrive('stop'));
+    if (btnTestFwd) btnTestFwd.addEventListener(evt, () => sendManualDrive('stop'));
+    if (btnTestRev) btnTestRev.addEventListener(evt, () => sendManualDrive('stop'));
+    if (btnTestSpinL) btnTestSpinL.addEventListener(evt, () => sendManualDrive('stop'));
+    if (btnTestSpinR) btnTestSpinR.addEventListener(evt, () => sendManualDrive('stop'));
   });
 
   // Video Device Selection
@@ -628,6 +801,28 @@ document.addEventListener('DOMContentLoaded', () => {
         terminalPacketLog.textContent = ser.last_tx || '<0,0>';
       }
       txtOverlayPwm.textContent = `L${ser.pwm_l} R${ser.pwm_r}`;
+
+      // Update Manual Cockpit Power Gauges & Packet Echo
+      if (valManualPwmL) valManualPwmL.textContent = ser.pwm_l;
+      if (valManualPwmR) valManualPwmR.textContent = ser.pwm_r;
+      if (meterManualL) meterManualL.style.width = `${Math.min(100, Math.abs(ser.pwm_l) / 2.55)}%`;
+      if (meterManualR) meterManualR.style.width = `${Math.min(100, Math.abs(ser.pwm_r) / 2.55)}%`;
+      if (txtManualPacketLog) txtManualPacketLog.textContent = ser.last_tx || '<0,0>';
+
+      if (d.manual && d.manual.active) {
+        if (badgeManualActiveCmd) {
+          badgeManualActiveCmd.textContent = d.manual.command.toUpperCase().replace('_', ' ');
+          badgeManualActiveCmd.className = 'status-pill pill-success';
+        }
+      } else if (activeManualCmd === 'stop') {
+        if (badgeManualActiveCmd) {
+          badgeManualActiveCmd.textContent = 'STANDBY';
+          badgeManualActiveCmd.className = 'status-pill pill-warn';
+        }
+        if (vectorIcon) vectorIcon.textContent = '⏹️';
+        if (txtVectorState) txtVectorState.textContent = 'STANDBY (HOLD KEY/BUTTON TO DRIVE)';
+        if (vectorArrowCircle) vectorArrowCircle.classList.remove('active-vector');
+      }
 
       isEmergencyStopped = ser.emergency_stopped;
       updateEstopButtons(isEmergencyStopped);
