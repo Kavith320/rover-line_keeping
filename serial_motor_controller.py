@@ -58,10 +58,19 @@ def list_serial_ports():
         except Exception as e:
             print(f"[WARN] Error scanning serial ports via pyserial: {e}")
 
+    # Check for Raspberry Pi GPIO primary UART symlinks
+    for rpi_port in ["/dev/serial0", "/dev/serial1"]:
+        if os.path.exists(rpi_port) and not any(dp["port"] == rpi_port for dp in detected_ports):
+            detected_ports.append({
+                "port": rpi_port,
+                "description": f"{rpi_port} (Raspberry Pi GPIO UART)"
+            })
+
     # Fallback scanning on Linux / Tinker Board / macOS if pyserial list_ports returned empty
     if not detected_ports:
-        # Common Linux / Tinker Board device nodes
+        # Common Linux / Tinker Board / Raspberry Pi device nodes
         patterns = [
+            "/dev/serial*",
             "/dev/ttyUSB*",
             "/dev/ttyACM*",
             "/dev/ttyS[1-4]*",    # Tinker Board UART1-UART4
@@ -83,6 +92,7 @@ def list_serial_ports():
     # If still empty, add common device names for user convenience
     if not detected_ports:
         detected_ports = [
+            {"port": "/dev/serial0", "description": "/dev/serial0 (Raspberry Pi GPIO UART)"},
             {"port": "/dev/ttyUSB0", "description": "/dev/ttyUSB0 (Standard USB-Serial)"},
             {"port": "/dev/ttyACM0", "description": "/dev/ttyACM0 (Arduino Uno/Mega/Micro)"},
             {"port": "/dev/ttyS1", "description": "/dev/ttyS1 (Tinker Board UART1)"},
@@ -94,9 +104,9 @@ def list_serial_ports():
 def load_hardware_config():
     """Loads serial and motor hardware configuration from JSON file."""
     defaults = {
-        "port": "/dev/ttyUSB0",
+        "port": "/dev/serial0",
         "baudrate": 115200,
-        "auto_connect": False,
+        "auto_connect": True,
         "pwm_min": 35,          # Minimum PWM to overcome static friction / deadband
         "pwm_max": 255,         # Maximum allowable PWM (0-255)
         "invert_left": False,   # Invert Left motor direction
@@ -167,7 +177,45 @@ class SerialMotorController:
         self.watchdog_thread.start()
 
         if self.cfg.get("auto_connect", False):
-            self.connect(self.cfg["port"], self.cfg["baudrate"])
+            self.auto_connect_hardware()
+
+    def auto_connect_hardware(self, preferred_port=None, preferred_baud=None):
+        """
+        Intelligently scans available hardware serial ports (Raspberry Pi GPIO UART /dev/serial0,
+        USB Serial /dev/ttyUSB0, /dev/ttyACM0, etc.) and connects to the first valid port.
+        Saves the successful port to config.
+        """
+        target_baud = int(preferred_baud) if preferred_baud else self.cfg.get("baudrate", 115200)
+        target_port = preferred_port if preferred_port else self.cfg.get("port", "/dev/serial0")
+
+        # 1. Try preferred or configured port first
+        if target_port:
+            success, msg = self.connect(target_port, target_baud)
+            if success and not self.simulated_mode:
+                print(f"[AUTO-CONNECT] Connected successfully to target port: {target_port} @ {target_baud} baud.")
+                return True, msg
+
+        # 2. If configured port failed and pyserial is available, scan available hardware ports
+        if SERIAL_AVAILABLE:
+            detected = list_serial_ports()
+            # Prioritize Raspberry Pi GPIO /dev/serial0 and USB ports
+            candidate_ports = []
+            for p in detected:
+                dev = p["port"]
+                if dev != target_port and dev not in candidate_ports:
+                    candidate_ports.append(dev)
+
+            for port in candidate_ports:
+                print(f"[AUTO-CONNECT] Probing serial port candidate: {port}...")
+                success, msg = self.connect(port, target_baud)
+                if success and not self.simulated_mode:
+                    print(f"[AUTO-CONNECT] Successfully auto-connected to {port} @ {target_baud} baud!")
+                    self.cfg["port"] = port
+                    save_hardware_config(self.cfg)
+                    return True, f"Auto-connected to {port}"
+
+        # 3. Fallback to configured port in simulated mode if hardware port couldn't be opened
+        return self.connect(target_port or "/dev/serial0", target_baud)
 
     def connect(self, port, baudrate):
         """Attempts to open serial connection to the motor controller."""
@@ -311,8 +359,9 @@ class SerialMotorController:
                 "connected": self.is_open,
                 "simulated": self.simulated_mode,
                 "status_text": state,
-                "port": self.cfg.get("port", "/dev/ttyUSB0"),
+                "port": self.cfg.get("port", "/dev/serial0"),
                 "baudrate": self.cfg.get("baudrate", 115200),
+                "auto_connect": self.cfg.get("auto_connect", True),
                 "last_tx": self.last_tx_packet,
                 "last_rx": self.last_rx_packet,
                 "last_rx_time": self.last_rx_time,

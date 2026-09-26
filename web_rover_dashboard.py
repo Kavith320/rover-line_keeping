@@ -65,6 +65,8 @@ class RoverVisionEngine:
         self.motor_controller = smc.get_motor_controller()
         if serial_port:
             self.motor_controller.connect(serial_port, baudrate)
+        elif self.motor_controller.cfg.get("auto_connect", False) and not self.motor_controller.is_open:
+            self.motor_controller.auto_connect_hardware()
 
         # Discover available capture devices (live cameras + recorded videos)
         self.devices = vdm.scan_available_devices()
@@ -842,9 +844,14 @@ def main():
     parser.add_argument("--baudrate", type=int, default=115200, help="Serial baudrate (default: 115200)")
     parser.add_argument("--sbc-profile", type=str, default="tinker_board", choices=["tinker_board", "balanced", "desktop"],
                         help="Performance optimization profile (default: tinker_board)")
+    parser.add_argument("--auto-connect", action="store_true", default=None,
+                        help="Automatically scan and connect to active serial motor driver on startup")
     parser.add_argument("--port", type=int, default=5001, help="Web server listening port (default: 5001)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Web server host binding (default: 0.0.0.0)")
     args = parser.parse_args()
+
+    if args.auto_connect is not None:
+        smc.get_motor_controller().cfg["auto_connect"] = args.auto_connect
 
     target_port = args.port
     if is_port_in_use(target_port):

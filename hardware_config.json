@@ -1,7 +1,7 @@
 {
-  "port": "/dev/ttyUSB0",
+  "port": "/dev/serial0",
   "baudrate": 115200,
-  "auto_connect": false,
+  "auto_connect": true,
   "pwm_min": 35,
   "pwm_max": 255,
   "invert_left": false,

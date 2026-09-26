@@ -83,6 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectBaudrate = document.getElementById('select-baudrate');
   const btnSerialConnect = document.getElementById('btn-serial-connect');
   const btnSerialDisconnect = document.getElementById('btn-serial-disconnect');
+  const checkAutoConnect = document.getElementById('check-auto-connect');
   const terminalPacketLog = document.getElementById('terminal-packet-log');
 
   const checkMotorsEnable = document.getElementById('check-motors-enable');
@@ -328,7 +329,8 @@ document.addEventListener('DOMContentLoaded', () => {
       invert_left: checkInvertLeft.checked,
       invert_right: checkInvertRight.checked,
       protocol: selectProtocol.value,
-      motors_enabled: checkMotorsEnable.checked
+      motors_enabled: checkMotorsEnable.checked,
+      auto_connect: checkAutoConnect ? checkAutoConnect.checked : true
     };
     try {
       const res = await fetch('/api/serial/config', {
@@ -353,6 +355,16 @@ document.addEventListener('DOMContentLoaded', () => {
       body: JSON.stringify({ motors_enabled: checkMotorsEnable.checked })
     });
   });
+
+  if (checkAutoConnect) {
+    checkAutoConnect.addEventListener('change', () => {
+      fetch('/api/serial/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_connect: checkAutoConnect.checked })
+      });
+    });
+  }
 
   // Emergency Stop Handler
   async function handleEstop(action = 'trigger') {
@@ -619,6 +631,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       isEmergencyStopped = ser.emergency_stopped;
       updateEstopButtons(isEmergencyStopped);
+
+      if (checkAutoConnect && ser.auto_connect !== undefined && !checkAutoConnect.matches(':active')) {
+        checkAutoConnect.checked = !!ser.auto_connect;
+      }
     }
 
     // Populate Available Devices Dropdown

@@ -83,6 +83,10 @@ def main():
         help="Serial link baudrate (default: 115200)"
     )
     parser.add_argument(
+        "--auto-connect", action="store_true", default=None,
+        help="Automatically scan and connect to active serial motor driver on startup"
+    )
+    parser.add_argument(
         "--port", type=int, default=5001,
         help="Web server HTTP listening port (default: 5001)"
     )
@@ -106,6 +110,9 @@ def main():
                 print(f"[INFO] Port {target_port} was busy. Switched to port {candidate}.")
                 target_port = candidate
                 break
+
+    if args.auto_connect is not None:
+        smc.get_motor_controller().cfg["auto_connect"] = args.auto_connect
 
     # Initialize Master Rover Vision & Hardware Engine
     wrd.engine = wrd.RoverVisionEngine(
