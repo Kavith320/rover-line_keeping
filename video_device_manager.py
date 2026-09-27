@@ -19,7 +19,10 @@ import sys
 import glob
 import time
 import threading
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 
 def scan_available_devices(data_dir="data"):
@@ -29,12 +32,24 @@ def scan_available_devices(data_dir="data"):
     """
     devices = []
     
-    # 1. Scan for Linux / Tinker Board V4L2 video nodes
+    # 1. Scan for Linux / Raspberry Pi / Tinker Board V4L2 video nodes
     v4l2_nodes = sorted(glob.glob("/dev/video*"))
     for node in v4l2_nodes:
+        cam_name = f"📷 {node} (Linux V4L2 / CSI)"
+        try:
+            base = os.path.basename(node)
+            sys_name_path = f"/sys/class/video4linux/{base}/name"
+            if os.path.exists(sys_name_path):
+                with open(sys_name_path, "r") as f:
+                    friendly = f.read().strip()
+                    if friendly:
+                        cam_name = f"📷 {node} ({friendly})"
+        except Exception:
+            pass
+
         devices.append({
             "id": node,
-            "name": f"📷 {node} (Linux V4L2 / CSI)",
+            "name": cam_name,
             "type": "camera",
             "is_live": True
         })
@@ -50,6 +65,14 @@ def scan_available_devices(data_dir="data"):
         devices.append({
             "id": "1",
             "name": "📷 Camera 1 (Secondary USB / CSI)",
+            "type": "camera",
+            "is_live": True
+        })
+    else:
+        # Also provide Index 0 as fallback option if user prefers numeric OpenCV indexing
+        devices.append({
+            "id": "0",
+            "name": "📷 Camera Index 0 (OpenCV Default)",
             "type": "camera",
             "is_live": True
         })

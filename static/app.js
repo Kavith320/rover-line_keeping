@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const txtBtnPause = document.getElementById('txt-btn-pause');
   const btnToggleLight = document.getElementById('btn-toggle-light');
   const selectDevice = document.getElementById('select-device');
+  const btnRefreshDevices = document.getElementById('btn-refresh-devices');
   const selectSbcProfile = document.getElementById('select-sbc-profile');
   const btnSaveCfg = document.getElementById('btn-save-cfg');
 
@@ -155,7 +156,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let isUserInteracting = false;
   let userInteractTimeout = null;
   let currentView = 'combined';
-  let availableDevicesLoaded = false;
+  let lastKnownDeviceFingerprint = '';
+  let isDeviceSwitching = false;
   let currentPaused = false;
   let isEmergencyStopped = false;
   let isTrackingActive = false;
@@ -679,28 +681,105 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnTestSpinR) btnTestSpinR.addEventListener(evt, () => stopContinuousDrive());
   });
 
+  // --- Dynamic Video Capture Device Management ---
+  function updateDeviceDropdown(devices, activeDevice, force = false) {
+    if (!selectDevice || !devices || !Array.isArray(devices) || devices.length === 0) return;
+
+    // Fingerprint detects added, removed, or renamed camera devices
+    const fingerprint = devices.map(d => `${d.id}:${d.name}`).join('|');
+
+    // Avoid clobbering dropdown while user is actively picking an option
+    if (!force && document.activeElement === selectDevice) return;
+
+    const needsRebuild = force || (fingerprint !== lastKnownDeviceFingerprint) || (selectDevice.options.length <= 1);
+
+    if (needsRebuild) {
+      const prevVal = selectDevice.value;
+      const targetVal = activeDevice || prevVal;
+
+      selectDevice.innerHTML = '';
+      devices.forEach(dev => {
+        const opt = document.createElement('option');
+        opt.value = dev.id;
+        opt.textContent = dev.name;
+        if (dev.id === targetVal || String(dev.id) === String(targetVal)) {
+          opt.selected = true;
+        }
+        selectDevice.appendChild(opt);
+      });
+      lastKnownDeviceFingerprint = fingerprint;
+    } else {
+      if (!isDeviceSwitching && activeDevice && selectDevice.value !== activeDevice && document.activeElement !== selectDevice) {
+        selectDevice.value = activeDevice;
+      }
+    }
+  }
+
+  async function refreshVideoDevices() {
+    if (btnRefreshDevices) {
+      btnRefreshDevices.textContent = '⏳';
+      btnRefreshDevices.disabled = true;
+    }
+    try {
+      const res = await fetch('/api/devices');
+      const data = await res.json();
+      if (data.status === 'ok' && data.devices) {
+        updateDeviceDropdown(data.devices, data.active_device, true);
+      }
+    } catch (e) {
+      console.error('Failed to refresh video devices:', e);
+    } finally {
+      if (btnRefreshDevices) {
+        btnRefreshDevices.textContent = '🔄';
+        btnRefreshDevices.disabled = false;
+      }
+    }
+  }
+
+  if (btnRefreshDevices) {
+    btnRefreshDevices.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await refreshVideoDevices();
+    });
+  }
+
   // Video Device Selection
   selectDevice.addEventListener('change', async () => {
     const devId = selectDevice.value;
     if (devId) {
-      await fetch('/api/device/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_id: devId })
-      });
-      roverStream.src = `/video_feed?view=${currentView}&t=${Date.now()}`;
+      isDeviceSwitching = true;
+      try {
+        await fetch('/api/device/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_id: devId })
+        });
+        roverStream.src = `/video_feed?view=${currentView}&t=${Date.now()}`;
+      } catch (e) {
+        console.error('Failed to switch video device:', e);
+      } finally {
+        setTimeout(() => { isDeviceSwitching = false; }, 800);
+      }
     }
   });
 
   btnApplyCamera.addEventListener('click', async () => {
     const customCam = inputCustomCamera.value.trim();
     if (customCam) {
-      await fetch('/api/device/select', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_id: customCam })
-      });
-      roverStream.src = `/video_feed?view=${currentView}&t=${Date.now()}`;
+      isDeviceSwitching = true;
+      try {
+        await fetch('/api/device/select', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_id: customCam })
+        });
+        roverStream.src = `/video_feed?view=${currentView}&t=${Date.now()}`;
+        await refreshVideoDevices();
+      } catch (e) {
+        console.error('Failed to switch custom camera:', e);
+      } finally {
+        setTimeout(() => { isDeviceSwitching = false; }, 800);
+      }
     }
   });
 
@@ -901,17 +980,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Populate Available Devices Dropdown
-    if (!availableDevicesLoaded && d.available_devices && d.available_devices.length > 0) {
-      selectDevice.innerHTML = '';
-      d.available_devices.forEach(dev => {
-        const opt = document.createElement('option');
-        opt.value = dev.id;
-        opt.textContent = dev.name;
-        if (dev.id === d.active_device) opt.selected = true;
-        selectDevice.appendChild(opt);
-      });
-      availableDevicesLoaded = true;
+    // Dynamically Populate & Keep Available Devices Dropdown Synchronized
+    if (d.available_devices && d.available_devices.length > 0) {
+      updateDeviceDropdown(d.available_devices, d.active_device);
     }
 
     // SBC Profile sync
@@ -1023,5 +1094,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initial loads
   loadSerialPorts();
+  refreshVideoDevices();
   pollTelemetry();
 });

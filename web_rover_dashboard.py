@@ -362,6 +362,13 @@ class RoverVisionEngine:
                 with self.lock:
                     self.frame_count += 1
                     
+                    # Periodically refresh available capture devices list (~every 4-5 seconds)
+                    if self.frame_count % 100 == 0:
+                        try:
+                            self.devices = vdm.scan_available_devices()
+                        except Exception:
+                            pass
+
                     # 1. SBC Optimization: Downscale frame for fast vision pipeline
                     proc_frame, (scale_x, scale_y), (orig_w, orig_h) = self.sbc.prepare_frame(frame)
                     proc_h, proc_w = proc_frame.shape[:2]
@@ -757,11 +764,15 @@ def toggle_tracking():
 
 # --- HARDWARE & SERIAL LINK API ENDPOINTS ---
 
-@app.route('/api/devices', methods=['GET'])
+@app.route('/api/devices', methods=['GET', 'POST'])
 def get_devices():
     """Returns all available video capture devices (cameras and test videos)."""
     global engine
     devs = vdm.scan_available_devices()
+    if engine:
+        with engine.lock:
+            engine.devices = devs
+            engine.telemetry["available_devices"] = devs
     return jsonify({
         "status": "ok",
         "devices": devs,

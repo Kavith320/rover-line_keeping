@@ -376,6 +376,11 @@ body {
   font-weight: 500;
   cursor: pointer;
   outline: none;
+  max-width: 280px;
+}
+
+.video-select-wrap .select-dropdown {
+  flex: 1;
 }
 
 .select-dropdown:focus {
